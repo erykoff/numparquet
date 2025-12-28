@@ -9,4 +9,5 @@ except PackageNotFoundError:
     # package is not installed
     pass
 
-from .numparquet import read_numparquet, write_numparquet
+from .schema import NumparquetSchema
+from .numparquet import read_numparquet

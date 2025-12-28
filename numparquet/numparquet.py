@@ -1,53 +1,14 @@
-import os
 import numpy as np
 
-import pyarrow as pa
-from pyarrow import parquet, dataset
+from .thrift import check_valid_parquet, read_md_length, read_file_metadata, read_page_header
+from .schema import NumparquetSchema
+from .compression import decompress_into
+from .encoding import NumpyBuffer, decode_data
 
 
-def write_numparquet(filename, recarray, clobber=False):
+def read_numparquet(filename, columns=None):
     """
-    Write a numpy recarray in parquet format.
-
-    Parameters
-    ----------
-    filename : `str`
-        Output filename.
-    recarray : `np.ndarray`
-        Numpy recarray to output
-    """
-    if os.path.exists(filename):
-        raise NotImplementedError("No clobbering yet.")
-
-    if not isinstance(recarray, np.ndarray):
-        raise ValueError("Input recarray is not a numpy recarray.")
-
-    if recarray.dtype.names is None:
-        raise ValueError("Input recarray is not a numpy recarray.")
-
-    columns = recarray.dtype.names
-
-    metadata = {}
-    for col in columns:
-        # Special-case string types to record the length
-        if recarray[col].dtype.type is np.str_:
-            metadata[f'recarray::strlen::{col}'] = str(recarray[col].dtype.itemsize//4)
-
-    type_list = [(name, pa.from_numpy_dtype(recarray[name].dtype.type))
-                 for name in recarray.dtype.names]
-    schema = pa.schema(type_list, metadata=metadata)
-
-    with parquet.ParquetWriter(filename, schema) as writer:
-        arrays = [pa.array(recarray[name])
-                  for name in recarray.dtype.names]
-        pa_table = pa.Table.from_arrays(arrays, schema=schema)
-
-        writer.write_table(pa_table)
-
-
-def read_numparquet(filename, columns=None, filter=None):
-    """
-    Read a numpy recarray in parquet format.
+    Read a numpy dict array thing.
 
     Parameters
     ----------
@@ -55,44 +16,146 @@ def read_numparquet(filename, columns=None, filter=None):
         Input filename
     columns : `list` [`str`], optional
         Name of columns to read.
-    filter : `expression thing`, optional
-        Pyarrow filter expression to filter rows.
 
     Returns
     -------
-    recarray : `np.ndarray`
+    dict_of_arrays : `dict` [`np.ndarray` or `np.ma.maskedarray`]
     """
-    ds = dataset.dataset(filename, format='parquet', partitioning='hive')
+    # TODO: allow fsspec or input open handle.
+    with open(filename, "rb") as file_buffer:
+        if not check_valid_parquet(file_buffer):
+            raise IOError("Not a valid parquet file.")
 
-    schema = ds.schema
+        md_length = read_md_length(file_buffer)
+        file_metadata = read_file_metadata(file_buffer, md_length)
 
-    # Convert from bytes to strings
-    md = {key.decode(): schema.metadata[key].decode()
-          for key in schema.metadata}
+        # print(file_metadata)
+        schema = NumparquetSchema(file_metadata)
 
-    names = schema.names
+        # Make the output data dictionary.
+        # Skip if not in read list!
+        data_dict = {}
+        for column in schema.columns:
+            if schema.get_null_count(column) > 0:
+                data_dict[column] = np.ma.masked_array(
+                    data=np.empty(schema.num_rows, dtype=schema[column].dtype),
+                    mask=np.zeros(schema.num_rows, dtype=np.bool_),
+                    fill_value=schema[column].null_value,
+                )
+            else:
+                data_dict[column] = np.empty(schema.num_rows, dtype=schema[column].dtype)
 
-    if columns is not None:
-        names = [name for name in schema.names
-                 if name in columns]
+        # Loop over the row groups.
+        row_group_index = 0
+        for row_group in file_metadata.row_groups:
+            row_group_rows = row_group.num_rows
+            rgslice = slice(row_group_index, row_group_index + row_group_rows)
 
-        if names == []:
-            # Should this raise instead?
-            return np.zeros(0)
-    else:
-        names = schema.names
+            for col_group in row_group.columns:
+                # Skip if not in read list!
+                col_metadata = col_group.meta_data
+                codec = col_metadata.codec
+                name = col_metadata.path_in_schema[-1]
 
-    dtype = []
-    for name in names:
-        if schema.field(name).type == pa.string():
-            dtype.append('U%d' % (int(md[f'recarray::strlen::{name}'])))
-        else:
-            dtype.append(schema.field(name).type.to_pandas_dtype())
+                native_dtype = schema[name].native_dtype
 
-    pa_table = ds.to_table(columns=names, filter=None)
-    data = np.zeros(pa_table.num_rows, dtype=list(zip(names, dtype)))
+                dict_offset = col_metadata.dictionary_page_offset
+                data_offset = col_metadata.data_page_offset
 
-    for name in names:
-        data[name][:] = pa_table[name].to_numpy()
+                has_dictionary_data = False
+                if dict_offset is not None:
+                    has_dictionary_data = True
 
-    return data
+                    # We read in the dictionary page.
+                    file_buffer.seek(dict_offset)
+                    page_header = read_page_header(file_buffer)
+
+                    read_buffer = np.empty(page_header.compressed_page_size, dtype="S1")
+                    file_buffer.readinto(read_buffer)
+
+                    # I'm unsure if this should be native_dtype or dtype
+                    # This works because the dictionary has PLAIN
+                    # encoding.
+                    # This needs to be UPDATED because buffer name is BAD.
+                    dict_value_buffer = np.empty(
+                        page_header.dictionary_page_header.num_values,
+                        dtype=native_dtype,
+                    )
+                    decompress_into(codec, read_buffer, dict_value_buffer)
+
+                # Read the data page and uncompress it.
+                file_buffer.seek(data_offset)
+                page_header = read_page_header(file_buffer)
+
+                read_buffer = np.empty(page_header.compressed_page_size, dtype="S1")
+                file_buffer.readinto(read_buffer)
+
+                data_page_buffer = np.empty(page_header.uncompressed_page_size, dtype="S1")
+                decompress_into(codec, read_buffer, data_page_buffer)
+
+                # This is a useful container for operating on the decompressed
+                # data.
+                npbuffer = NumpyBuffer(data_page_buffer)
+
+                # 1. Repetition levels data.  Currently unsupported.
+                if len(col_metadata.path_in_schema) > 1:
+                    raise NotImplementedError("Repetition level not currently supported.")
+
+                # 2. Definition levels data.  Only for optional columns.
+                #    This tells which are NULL.
+                has_definition_data = False
+                if not schema[name].required:
+                    has_definition_data = True
+
+                    # Compute the maximum definition level.
+                    # This is here for use in the future.
+                    max_definition_level = 0
+                    for part in col_metadata.path_in_schema:
+                        if not schema[part].required:
+                            max_definition_level += 1
+
+                    bit_width = int(np.ceil(np.log2(max_definition_level + 1)))
+
+                    definition_values = decode_data(
+                        npbuffer,
+                        page_header.data_page_header.definition_level_encoding,
+                        page_header.data_page_header.num_values,
+                        bit_width=bit_width,
+                        read_length=True,
+                    )
+
+                # 3. Encoded values.
+
+                if has_definition_data:
+                    # Only non-null entries are stored.
+                    data_value_count = np.sum(definition_values > 0)
+                else:
+                    # All entries are stored.
+                    data_value_count = row_group_rows
+
+                null_count = row_group_rows - data_value_count
+
+                if has_dictionary_data:
+                    bit_width = int(npbuffer.read(1, dtype=np.uint8)[0])
+                else:
+                    bit_width = None
+
+                data_values = decode_data(
+                    npbuffer,
+                    page_header.data_page_header.encoding,
+                    data_value_count,
+                    bit_width=bit_width,
+                    read_length=False,
+                )
+
+                # Fill the output data.
+                if has_dictionary_data:
+                    if has_definition_data and (null_count > 0):
+                        non_null = (definition_values == 1)
+                        data_dict[name][rgslice][non_null] = dict_value_buffer[data_values]
+                        data_dict[name][rgslice][~non_null] = schema[column].null_value
+                        data_dict[name].mask[rgslice][~non_null] = True
+                    else:
+                        data_dict[name][rgslice] = dict_value_buffer[data_values]
+
+    return data_dict
