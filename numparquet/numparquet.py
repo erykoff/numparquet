@@ -187,15 +187,20 @@ def read_numparquet(filename, columns=None):
 
                     if is_byte_array:
                         if data_dict[name] is None:
-                            # First row group.
+                            # First batch of rows with this column.
                             data_dict[name] = np.empty(schema.num_rows, dtype=dict_values.dtype)
                         else:
-                            # Subsequent row group. OR NOT FIX ME
-                            if dict_values.dtype.itemsize > data_dict[name].dtype.itemsize:
+                            # Subsequent batches of rows with this column.
+                            if has_dictionary_data:
+                                new_dtype = dict_values.dtype
+                            else:
+                                new_dtype = data_values.dtype
+                            if new_dtype.itemsize > data_dict[name].dtype.itemsize:
                                 # The strings got longer; we need to reallocate and
                                 # copy over the other data.
-                                temp = np.empty(schema.num_rows, dtype=dict_values.dtype)
-                                temp[0: row_group_index] = data_dict[name][0: row_group_index]
+                                temp = np.empty(schema.num_rows, dtype=new_dtype)
+                                n_copy = row_group_index + col_group_index
+                                temp[0: n_copy] = data_dict[name][0: n_copy]
                                 data_dict[name] = temp
 
                     # Fill the output data.
