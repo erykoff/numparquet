@@ -6,6 +6,17 @@ from .compression import decompress_into
 from .encoding import NumpyBuffer, decode_data
 
 
+# TODO:
+#  * column name reading
+#  * plain buffer reading clarifications.
+#  * test memory usage
+#  * test speed
+#  * string handling
+#  * derived types (what do they look like)
+#  * tests (!)
+#  * fsspec/open file handles.
+
+
 def read_numparquet(filename, columns=None):
     """
     Read a numpy dict array thing.
@@ -29,14 +40,16 @@ def read_numparquet(filename, columns=None):
         md_length = read_md_length(file_buffer)
         file_metadata = read_file_metadata(file_buffer, md_length)
 
-        # print(file_metadata)
         schema = NumparquetSchema(file_metadata)
 
         # Make the output data dictionary.
         # Skip if not in read list!
         data_dict = {}
         for column in schema.columns:
-            if schema.get_null_count(column) > 0:
+            if schema[column].is_byte_array:
+                # String/byte columns need special handling.
+                data_dict[column] = None
+            elif schema.get_null_count(column) > 0:
                 data_dict[column] = np.ma.masked_array(
                     data=np.empty(schema.num_rows, dtype=schema[column].dtype),
                     mask=np.zeros(schema.num_rows, dtype=np.bool_),
@@ -57,7 +70,7 @@ def read_numparquet(filename, columns=None):
                 codec = col_metadata.codec
                 name = col_metadata.path_in_schema[-1]
 
-                native_dtype = schema[name].native_dtype
+                is_byte_array = schema[name].is_byte_array
 
                 dict_offset = col_metadata.dictionary_page_offset
                 data_offset = col_metadata.data_page_offset
@@ -73,15 +86,20 @@ def read_numparquet(filename, columns=None):
                     read_buffer = np.empty(page_header.compressed_page_size, dtype="S1")
                     file_buffer.readinto(read_buffer)
 
-                    # I'm unsure if this should be native_dtype or dtype
-                    # This works because the dictionary has PLAIN
-                    # encoding.
-                    # This needs to be UPDATED because buffer name is BAD.
-                    dict_value_buffer = np.empty(
-                        page_header.dictionary_page_header.num_values,
-                        dtype=native_dtype,
-                    )
+                    dict_value_buffer = np.empty(page_header.uncompressed_page_size, dtype="S1")
                     decompress_into(codec, read_buffer, dict_value_buffer)
+
+                    dict_npbuffer = NumpyBuffer(dict_value_buffer)
+
+                    dict_values = decode_data(
+                        dict_npbuffer,
+                        page_header.dictionary_page_header.encoding,
+                        page_header.dictionary_page_header.num_values,
+                        schema_element=schema[name],
+                    )
+
+                if not has_dictionary_data:
+                    raise NotImplementedError("Need dictionary data at this moment.")
 
                 # Read the data page and uncompress it.
                 file_buffer.seek(data_offset)
@@ -146,16 +164,36 @@ def read_numparquet(filename, columns=None):
                     data_value_count,
                     bit_width=bit_width,
                     read_length=False,
+                    schema_element=schema[name],
                 )
+
+                if is_byte_array:
+                    # Will need a non-dictionary example for the alternative.
+
+                    if data_dict[name] is None:
+                        # First row group.
+                        data_dict[name] = np.empty(schema.num_rows, dtype=dict_values.dtype)
+                    else:
+                        # Subsequent row group.
+                        if dict_values.dtype.itemsize > data_dict[name].dtype.itemsize:
+                            # The strings got longer; we need to reallocate and
+                            # copy over the other data.
+                            temp = np.empty(schema.num_rows, dtype=dict_values.dtype)
+                            temp[0: row_group_index] = data_dict[name][0: row_group_index]
+                            data_dict[name] = temp
 
                 # Fill the output data.
                 if has_dictionary_data:
                     if has_definition_data and (null_count > 0):
                         non_null = (definition_values == 1)
-                        data_dict[name][rgslice][non_null] = dict_value_buffer[data_values]
+                        data_dict[name][rgslice][non_null] = dict_values[data_values]
                         data_dict[name][rgslice][~non_null] = schema[column].null_value
                         data_dict[name].mask[rgslice][~non_null] = True
                     else:
-                        data_dict[name][rgslice] = dict_value_buffer[data_values]
+                        data_dict[name][rgslice] = dict_values[data_values]
+                else:
+                    raise NotImplementedError("Non-dictionary not implemented yet")
+
+            row_group_index += row_group_rows
 
     return data_dict

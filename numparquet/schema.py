@@ -8,8 +8,8 @@ class NumparquetSchemaElement:
 
     def __init__(self, schema_element):
         self._name = schema_element.name
-        # self._visible = (self._name != "schema")
         self._required = (schema_element.repetition_type == parquet_thrift.FieldRepetitionType.REQUIRED)
+        self._is_byte_array = False
 
         native_dtype = None
         if schema_element.type == parquet_thrift.Type.BOOLEAN:
@@ -22,16 +22,45 @@ class NumparquetSchemaElement:
             native_dtype = np.float32
         elif schema_element.type == parquet_thrift.Type.DOUBLE:
             native_dtype = np.float64
+        elif schema_element.type == parquet_thrift.Type.BYTE_ARRAY:
+            self._is_byte_array = True
+            native_dtype = "S1"
         elif schema_element.type is None:
             native_dtype = None
         else:
             # Note that type_length is FIXED_LEN_BYTE_ARRAY
             # This is the string maybe?  Will need to work on that.
-            raise NotImplementedError("Sorry; byte dtypes not supported yet")
+            raise NotImplementedError("Sorry; fixed len byte dtypes not supported yet")
 
         dtype = None
         if (logicalType := schema_element.logicalType) is not None:  # noqa: F841
-            raise NotImplementedError("Sorry; logical type not implemented yet.")
+            if (intType := logicalType.INTEGER) is not None:
+                if intType.bitWidth == 64:
+                    if intType.isSigned:
+                        dtype = np.int64
+                    else:
+                        dtype = np.uint64
+                elif intType.bitWidth == 32:
+                    if intType.isSigned:
+                        dtype = np.int32
+                    else:
+                        dtype = np.uint32
+                elif intType.bitWidth == 16:
+                    if intType.isSigned:
+                        dtype = np.int16
+                    else:
+                        dtype = np.uint16
+                elif intType.bitWidth == 8:
+                    if intType.isSigned:
+                        dtype = np.int8
+                    else:
+                        dtype = np.uint8
+                else:
+                    raise ValueError("Illegal logicalType!")
+            elif logicalType.STRING is not None:
+                dtype = "U1"
+            else:
+                raise NotImplementedError("Sorry; other logical types not supported now")
         elif (converted_type := schema_element.converted_type) is not None:  # noqa: F841
             raise NotImplementedError("Sorry; converted_type not implemented yet.")
         else:
@@ -39,14 +68,17 @@ class NumparquetSchemaElement:
 
         if dtype in (np.float32, np.float64):
             null_value = np.nan
-        elif dtype in (np.int16, np.int32):
+        elif dtype in (np.int8, np.int16, np.int32, np.int64):
             null_value = -1
         elif dtype in (np.bool_,):
             null_value = True
+        elif dtype in ("S1", "U1"):
+            null_value = ""
         else:
+            # Unsigned integers in particular
             null_value = 0
 
-        self._native_dtype = dtype
+        self._native_dtype = native_dtype
         self._dtype = dtype
         self._null_value = null_value
 
@@ -65,6 +97,10 @@ class NumparquetSchemaElement:
     @property
     def dtype(self):
         return self._dtype
+
+    @property
+    def is_byte_array(self):
+        return self._is_byte_array
 
     @property
     def null_value(self):

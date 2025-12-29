@@ -184,7 +184,7 @@ def read_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
     return n_read
 
 
-def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=False):
+def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=False, schema_element=None):
     """Decode data and return an array.
 
     Parameters
@@ -194,12 +194,31 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
     num_values : `int`
     bit_width : `int`, optional
     read_length : `bool`, optional
+    schema_element : `NumparquetSchemaElement`, optional
 
     Returns
     -------
     values : `np.ndarray`
     """
-    if encoding in (parquet_thrift.Encoding.RLE, parquet_thrift.Encoding.RLE_DICTIONARY):
+    if encoding == parquet_thrift.Encoding.PLAIN:
+        if schema_element.is_byte_array:
+            # There has to be a better way.
+            convert_unicode = (np.dtype(schema_element.dtype).kind == "U")
+
+            values = []
+            for index in range(num_values):
+                length = npbuffer.read(count=1, dtype=np.int32)[0]
+                val = npbuffer.read(count=length, dtype="S1").tobytes()
+                if convert_unicode:
+                    values.append(val.decode("UTF-8"))
+                else:
+                    values.append(val)
+
+            values = np.asarray(values)
+        else:
+            # This is a direct translation, and reuses the buffer.
+            values = npbuffer.read(count=num_values, dtype=schema_element.native_dtype)
+    elif encoding in (parquet_thrift.Encoding.RLE, parquet_thrift.Encoding.RLE_DICTIONARY):
         index = 0
         values = np.zeros(num_values, dtype=np.int32)
 
