@@ -199,7 +199,10 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
     Returns
     -------
     values : `np.ndarray`
+    use_dictionary_data : `bool`
+        These data should be used with dictionary data.
     """
+    use_dictionary_data = False
     if encoding == parquet_thrift.Encoding.PLAIN:
         if schema_element.is_byte_array:
             # There has to be a better way.
@@ -218,7 +221,16 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
         else:
             # This is a direct translation, and reuses the buffer.
             values = npbuffer.read(count=num_values, dtype=schema_element.native_dtype)
-    elif encoding in (parquet_thrift.Encoding.RLE, parquet_thrift.Encoding.RLE_DICTIONARY):
+    elif encoding in (
+        parquet_thrift.Encoding.RLE,
+        parquet_thrift.Encoding.RLE_DICTIONARY,
+        parquet_thrift.Encoding.PLAIN_DICTIONARY,  # For backwards-compatibility
+    ):
+        if encoding in (parquet_thrift.Encoding.RLE_DICTIONARY, parquet_thrift.Encoding.PLAIN_DICTIONARY):
+            # The data page leads with the bit width.
+            bit_width = int(npbuffer.read(1, dtype=np.uint8)[0])
+            use_dictionary_data = True
+
         index = 0
         values = np.zeros(num_values, dtype=np.int32)
 
@@ -231,6 +243,6 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
             n_read = read_rle_bit_packed_hybrid(npbuffer, bit_width, values, index, length=length)
             index += n_read
     else:
-        raise NotImplementedError("Only RLE so far... plain soon!")
+        raise NotImplementedError("Only RLE and PLAIN so far.")
 
-    return values
+    return values, use_dictionary_data

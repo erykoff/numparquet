@@ -9,7 +9,7 @@ from .encoding import NumpyBuffer, decode_data
 # TODO:
 #  * test memory usage
 #  * test speed
-#  * add fixed length byte arrays
+#  * add lists (?) these are HARD
 #  * derived types (what do they look like)
 #  * tests (!)
 #  * fsspec/open file handles.
@@ -97,18 +97,18 @@ def read_numparquet(filename, columns=None):
                 # Seek to the start of the data in this column group.
                 dict_offset = col_metadata.dictionary_page_offset
                 data_offset = col_metadata.data_page_offset
-                has_dictionary_data = False
+                read_dictionary_data = False
                 if dict_offset is None:
                     file_buffer.seek(data_offset)
                 else:
-                    has_dictionary_data = True
+                    read_dictionary_data = True
                     file_buffer.seek(dict_offset)
 
                 # Loop until we have read all the data.
                 col_group_index = 0
                 while col_group_index < row_group_rows:
 
-                    if has_dictionary_data:
+                    if read_dictionary_data:
                         # Note that only the first page can be a dictionary
                         # page; we will have to reset this at the end of the
                         # loop.
@@ -122,7 +122,7 @@ def read_numparquet(filename, columns=None):
 
                         dict_npbuffer = NumpyBuffer(dict_value_buffer)
 
-                        dict_values = decode_data(
+                        dict_values, _ = decode_data(
                             dict_npbuffer,
                             page_header.dictionary_page_header.encoding,
                             page_header.dictionary_page_header.num_values,
@@ -152,7 +152,7 @@ def read_numparquet(filename, columns=None):
                     #    This tells which are NULL.
 
                     if has_definition_data:
-                        definition_values = decode_data(
+                        definition_values, _ = decode_data(
                             npbuffer,
                             page_header.data_page_header.definition_level_encoding,
                             num_values_in_page,
@@ -171,16 +171,10 @@ def read_numparquet(filename, columns=None):
 
                     null_count = num_values_in_page - data_value_count
 
-                    if has_dictionary_data:
-                        bit_width = int(npbuffer.read(1, dtype=np.uint8)[0])
-                    else:
-                        bit_width = None
-
-                    data_values = decode_data(
+                    data_values, use_dictionary_data = decode_data(
                         npbuffer,
                         page_header.data_page_header.encoding,
                         data_value_count,
-                        bit_width=bit_width,
                         read_length=False,
                         schema_element=schema[name],
                     )
@@ -191,7 +185,7 @@ def read_numparquet(filename, columns=None):
                             data_dict[name] = np.empty(schema.num_rows, dtype=dict_values.dtype)
                         else:
                             # Subsequent batches of rows with this column.
-                            if has_dictionary_data:
+                            if read_dictionary_data:
                                 new_dtype = dict_values.dtype
                             else:
                                 new_dtype = data_values.dtype
@@ -205,7 +199,7 @@ def read_numparquet(filename, columns=None):
 
                     # Fill the output data.
                     cgslice = slice(col_group_index, col_group_index + num_values_in_page)
-                    if has_dictionary_data:
+                    if use_dictionary_data:
                         if has_definition_data and (null_count > 0):
                             non_null = (definition_values > 0)
                             data_dict[name][rgslice][cgslice][non_null] = dict_values[data_values]
@@ -225,7 +219,7 @@ def read_numparquet(filename, columns=None):
                     # Increment the counter of number of rows read.
                     col_group_index += num_values_in_page
                     # Subsequent pages will not have dictionary data.
-                    has_dictionary_data = False
+                    read_dictionary_data = False
 
             row_group_index += row_group_rows
 
