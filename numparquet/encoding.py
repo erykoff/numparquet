@@ -154,12 +154,11 @@ def read_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
             n_read += count
         else:
             bitpacked_values = read_bitpacked(npbuffer, header, width)
-            if index + n_read + len(bitpacked_values) > len(values):
-                # Clip off extra values.
-                delta = len(values) - (index + int(n_read) + len(bitpacked_values))
-                bitpacked_values = bitpacked_values[0: delta]
+            stop_index = len(bitpacked_values)
+            if (index + n_read + stop_index) > len(values):
+                stop_index = len(values) - (index + int(n_read))
 
-            values[index + n_read: index + n_read + len(bitpacked_values)] = bitpacked_values
+            values[index + n_read: index + n_read + stop_index] = bitpacked_values[0: stop_index]
 
             n_read += len(bitpacked_values)
 
