@@ -69,7 +69,7 @@ static PyObject *read_bitpacked(PyObject *dummy, PyObject *args) {
     if (value_arr == NULL) goto fail;
     int32_t *value_data = (int32_t *)PyArray_DATA((PyArrayObject *)value_arr);
 
-    npy_intp raw_bytes_size = PyArray_SIZE(raw_bytes_arr);
+    npy_intp raw_bytes_size = PyArray_SIZE((PyArrayObject *)raw_bytes_arr);
 
     int current_byte = 0;
     int data = (int) raw_bytes_data[0];
