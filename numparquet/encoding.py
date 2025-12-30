@@ -1,6 +1,7 @@
 import numpy as np
 
 from .thrift import parquet_thrift
+from ._numparquet import _read_bitpacked
 
 
 class NumpyBuffer:
@@ -114,37 +115,12 @@ def read_bitpacked(npbuffer, header, width):
     count = num_groups * 8
     byte_count = (width * count) // 8
 
-    values = np.empty(count, dtype=np.int32)
-
     if width == 0:
-        values[:] = 0
-        return values
+        return np.zeros(count, dtype=np.int32)
 
     raw_bytes = npbuffer.read(byte_count, dtype=np.uint8)
-    current_byte = 0
-    data = int(raw_bytes[current_byte])
-    mask = (1 << width) - 1
-    bits_wnd_l = 8
-    bits_wnd_r = 0
-    total = len(raw_bytes) * 8
-    index = 0
-    while total >= width:
-        # NOTE zero-padding could produce extra zero-values
-        if bits_wnd_r >= 8:
-            bits_wnd_r -= 8
-            bits_wnd_l -= 8
-            data >>= 8
-        elif bits_wnd_l - bits_wnd_r >= width:
-            values[index] = (data >> bits_wnd_r) & mask
-            index += 1
-            total -= int(width)
-            bits_wnd_r += int(width)
-        elif current_byte + 1 < len(raw_bytes):
-            current_byte += 1
-            data |= (int(raw_bytes[current_byte]) << bits_wnd_l)
-            bits_wnd_l += 8
 
-    return values
+    return _read_bitpacked(raw_bytes, width, count)
 
 
 def read_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
@@ -177,9 +153,15 @@ def read_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
             values[index + n_read: index + n_read + count] = value
             n_read += count
         else:
-            stuff = read_bitpacked(npbuffer, header, width)
-            values[index + n_read: index + n_read + len(stuff)] = stuff
-            n_read += len(stuff)
+            bitpacked_values = read_bitpacked(npbuffer, header, width)
+            if index + n_read + len(bitpacked_values) > len(values):
+                # Clip off extra values.
+                delta = len(values) - (index + n_read + len(bitpacked_values))
+                bitpacked_values = bitpacked_values[0: delta]
+
+            values[index + n_read: index + n_read + len(bitpacked_values)] = bitpacked_values
+
+            n_read += len(bitpacked_values)
 
     return n_read
 
