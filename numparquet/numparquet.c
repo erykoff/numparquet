@@ -71,13 +71,13 @@ static PyObject *read_bitpacked(PyObject *dummy, PyObject *args) {
 
     npy_intp raw_bytes_size = PyArray_SIZE((PyArrayObject *)raw_bytes_arr);
 
-    int current_byte = 0;
-    int data = (int) raw_bytes_data[0];
-    int mask = (1 << width) - 1;
-    int bits_wnd_l = 8;
-    int bits_wnd_r = 0;
-    int total = (int) raw_bytes_size * 8;
-    int index = 0;
+    uint32_t current_byte = 0;
+    uint64_t data = (uint64_t) raw_bytes_data[0];
+    uint64_t mask = (1 << width) - 1;
+    int64_t bits_wnd_l = 8;
+    int64_t bits_wnd_r = 0;
+    uint64_t total = (uint64_t) raw_bytes_size * 8;
+    uint64_t index = 0;
     // fprintf(stdout, "%d\n", (int) mask);
     while (total >= width) {
         // Note zero-padding could produce extra zero values.
@@ -95,7 +95,7 @@ static PyObject *read_bitpacked(PyObject *dummy, PyObject *args) {
         } else if ((current_byte + 1) < raw_bytes_size) {
             current_byte++;
             // fprintf(stdout, "  %d %d %d\n", data, (int) raw_bytes_data[current_byte], bits_wnd_l);
-            data |= ((int) (raw_bytes_data[current_byte]) << bits_wnd_l);
+            data |= ((uint64_t) (raw_bytes_data[current_byte]) << bits_wnd_l);
             // fprintf(stdout, "  -> %d\n", data);
             bits_wnd_l += 8;
         }
