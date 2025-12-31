@@ -97,7 +97,7 @@ def read_rle(npbuffer, header, bit_width):
     return count, value
 
 
-def read_bitpacked(npbuffer, header, width):
+def read_bitpacked(npbuffer, header, width, boolean=False):
     """Read from a buffer a set of bit-packed values.
 
     Parameters
@@ -105,11 +105,12 @@ def read_bitpacked(npbuffer, header, width):
     npbuffer : `NumpyBuffer`
     header : `np.uint64`
     width : `int`
+    boolean : `bool`, optional
 
     Returns
     -------
     values : `np.ndarray`
-        Array of values (np.int32)
+        Array of values (np.int32 unless boolean=True)
     """
     num_groups = header >> 1
     count = num_groups * 8
@@ -120,7 +121,7 @@ def read_bitpacked(npbuffer, header, width):
 
     raw_bytes = npbuffer.read(byte_count, dtype=np.uint8)
 
-    return _read_bitpacked(raw_bytes, width, count)
+    return _read_bitpacked(raw_bytes, width, count, boolean=boolean)
 
 
 def read_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
@@ -199,6 +200,10 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
                     values.append(val)
 
             values = np.asarray(values)
+        elif schema_element.dtype == np.bool_:
+            # PLAIN encoding for Boolean uses bit-packed.
+            count = npbuffer.remaining
+            values = read_bitpacked(npbuffer, count << 1, 1, boolean=True)[0: num_values]
         else:
             # This is a direct translation, and reuses the buffer.
             values = npbuffer.read(count=num_values, dtype=schema_element.native_dtype)

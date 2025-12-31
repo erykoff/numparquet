@@ -45,17 +45,17 @@ PyDoc_STRVAR(read_bitpacked_doc,
              "\n"
              );
 
-static PyObject *read_bitpacked(PyObject *dummy, PyObject *args) {
+static PyObject *read_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwargs) {
     PyObject *raw_bytes_obj = NULL;
     PyObject *raw_bytes_arr, *value_arr = NULL;
 
-    // NpyIter *iter = NULL;
+    int boolean = 0;
 
     int width;
     int count;
-    // static char *kwlist[] = {"raw_bytes", "width", "count", NULL}
+    static char *kwlist[] = {"raw_bytes", "width", "count", "boolean", NULL};
 
-    if (!PyArg_ParseTuple(args, "Oii", &raw_bytes_obj, &width, &count))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Oiip", kwlist, &raw_bytes_obj, &width, &count, &boolean))
         goto fail;
 
     raw_bytes_arr = PyArray_FROM_OTF(raw_bytes_obj, NPY_UINT8, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSUREARRAY);
@@ -65,9 +65,15 @@ static PyObject *read_bitpacked(PyObject *dummy, PyObject *args) {
     npy_intp dims[1];
     dims[0] = (npy_intp)count;
 
-    value_arr = PyArray_SimpleNew(1, dims, NPY_INT32);
-    if (value_arr == NULL) goto fail;
-    int32_t *value_data = (int32_t *)PyArray_DATA((PyArrayObject *)value_arr);
+    void *value_data;
+    if (boolean) {
+        value_arr = PyArray_SimpleNew(1, dims, NPY_BOOL);
+        if (value_arr == NULL) goto fail;
+    } else {
+        value_arr = PyArray_SimpleNew(1, dims, NPY_INT32);
+        if (value_arr == NULL) goto fail;
+    }
+    value_data = (void *)PyArray_DATA((PyArrayObject *)value_arr);
 
     npy_intp raw_bytes_size = PyArray_SIZE((PyArrayObject *)raw_bytes_arr);
 
@@ -78,25 +84,24 @@ static PyObject *read_bitpacked(PyObject *dummy, PyObject *args) {
     int64_t bits_wnd_r = 0;
     uint64_t total = (uint64_t) raw_bytes_size * 8;
     uint64_t index = 0;
-    // fprintf(stdout, "%d\n", (int) mask);
     while (total >= width) {
         // Note zero-padding could produce extra zero values.
-        // fprintf(stdout, "%d %d %d %d %d\n", current_byte, data, bits_wnd_l, bits_wnd_r, total);
         if (bits_wnd_r >= 8) {
             bits_wnd_r -= 8;
             bits_wnd_l -= 8;
             data >>= 8;
         } else if ((bits_wnd_l - bits_wnd_r) >= width) {
-            value_data[index] = (int32_t) ((data >> bits_wnd_r) & mask);
-            // fprintf(stdout, "%d: %d\n", index, value_data[index]);
+            if (boolean) {
+                ((uint8_t *)value_data)[index] = (uint8_t) ((data >> bits_wnd_r) & mask);
+            } else {
+                ((int32_t *)value_data)[index] = (int32_t) ((data >> bits_wnd_r) & mask);
+            }
             index++;
             total -= width;
             bits_wnd_r += width;
         } else if ((current_byte + 1) < raw_bytes_size) {
             current_byte++;
-            // fprintf(stdout, "  %d %d %d\n", data, (int) raw_bytes_data[current_byte], bits_wnd_l);
             data |= ((uint64_t) (raw_bytes_data[current_byte]) << bits_wnd_l);
-            // fprintf(stdout, "  -> %d\n", data);
             bits_wnd_l += 8;
         }
     }
@@ -117,7 +122,7 @@ static PyObject *read_bitpacked(PyObject *dummy, PyObject *args) {
 
 static PyMethodDef numparquet_methods[] = {
     {"_read_bitpacked", (PyCFunction)(void (*)(void))read_bitpacked,
-     METH_VARARGS, read_bitpacked_doc},
+     METH_VARARGS | METH_KEYWORDS, read_bitpacked_doc},
     {NULL, NULL, 0, NULL}};
 
 static struct PyModuleDef numparquet_module = {PyModuleDef_HEAD_INIT, "_numparquet", NULL, -1,
