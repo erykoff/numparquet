@@ -6,26 +6,47 @@ from .thrift import parquet_thrift
 class NumparquetSchemaElement:
     """Docstring."""
 
-    def __init__(self, schema_element):
-        self._name = schema_element.name
-        self._required = (schema_element.repetition_type == parquet_thrift.FieldRepetitionType.REQUIRED)
+    def __init__(self, schema_elements):
+
+        self._is_list = False
+        self._list_length = 0
+
+        if len(schema_elements) == 1:
+            name_element = schema_elements[0]
+            dtype_element = schema_elements[0]
+        else:
+            name_element = schema_elements[0]
+            if (logicalType := name_element.logicalType) is None:
+                raise RuntimeError("Cannot have multiple schema elements without a logicalType set.")
+            if logicalType.LIST is not None:
+                self._is_list = True
+
+                if len(schema_elements) != 3:
+                    raise RuntimeError("List schema elements improperly stored.")
+                dtype_element = schema_elements[2]
+            else:
+                raise NotImplementedError("Only LIST types of multi-schema elements are supported.")
+
+        self._name = name_element.name
+        self._path_in_schema = [element.name for element in schema_elements]
+        # self._required = (name_element.repetition_type == parquet_thrift.FieldRepetitionType.REQUIRED)
         self._is_byte_array = False
 
         native_dtype = None
-        if schema_element.type == parquet_thrift.Type.BOOLEAN:
+        if dtype_element.type == parquet_thrift.Type.BOOLEAN:
             native_dtype = np.bool_
-        elif schema_element.type == parquet_thrift.Type.INT32:
+        elif dtype_element.type == parquet_thrift.Type.INT32:
             native_dtype = np.int32
-        elif schema_element.type == parquet_thrift.Type.INT64:
+        elif dtype_element.type == parquet_thrift.Type.INT64:
             native_dtype = np.int64
-        elif schema_element.type == parquet_thrift.Type.FLOAT:
+        elif dtype_element.type == parquet_thrift.Type.FLOAT:
             native_dtype = np.float32
-        elif schema_element.type == parquet_thrift.Type.DOUBLE:
+        elif dtype_element.type == parquet_thrift.Type.DOUBLE:
             native_dtype = np.float64
-        elif schema_element.type == parquet_thrift.Type.BYTE_ARRAY:
+        elif dtype_element.type == parquet_thrift.Type.BYTE_ARRAY:
             self._is_byte_array = True
             native_dtype = "S1"
-        elif schema_element.type is None:
+        elif dtype_element.type is None:
             native_dtype = None
         else:
             # Note that type_length is FIXED_LEN_BYTE_ARRAY
@@ -33,7 +54,7 @@ class NumparquetSchemaElement:
             raise NotImplementedError("Sorry; fixed len byte dtypes not supported yet")
 
         dtype = None
-        if (logicalType := schema_element.logicalType) is not None:  # noqa: F841
+        if (logicalType := dtype_element.logicalType) is not None:  # noqa: F841
             if (intType := logicalType.INTEGER) is not None:
                 if intType.bitWidth == 64:
                     if intType.isSigned:
@@ -61,7 +82,7 @@ class NumparquetSchemaElement:
                 dtype = "U1"
             else:
                 raise NotImplementedError("Sorry; other logical types not supported now")
-        elif (converted_type := schema_element.converted_type) is not None:  # noqa: F841
+        elif (converted_type := dtype_element.converted_type) is not None:  # noqa: F841
             raise NotImplementedError("Sorry; converted_type not implemented yet.")
         else:
             dtype = native_dtype
@@ -82,13 +103,29 @@ class NumparquetSchemaElement:
         self._dtype = dtype
         self._null_value = null_value
 
+        self._max_repetition_level = 0
+        for element in schema_elements:
+            if element.repetition_type == parquet_thrift.FieldRepetitionType.REPEATED:
+                self._max_repetition_level += 1
+        self._repetition_level_bit_width = int(np.ceil(np.log2(self._max_repetition_level + 1)))
+
+        self._max_definition_level = 0
+        for element in schema_elements:
+            if element.repetition_type != parquet_thrift.FieldRepetitionType.REQUIRED:
+                self._max_definition_level += 1
+        self._definition_level_bit_width = int(np.ceil(np.log2(self._max_definition_level + 1)))
+
     @property
     def name(self):
         return self._name
 
     @property
-    def required(self):
-        return self._required
+    def path_in_schema(self):
+        return self._path_in_schema
+
+    @property
+    def nullable(self):
+        return self._max_definition_level > 0
 
     @property
     def native_dtype(self):
@@ -103,8 +140,28 @@ class NumparquetSchemaElement:
         return self._is_byte_array
 
     @property
+    def is_list(self):
+        return self._is_list
+
+    @property
     def null_value(self):
         return self._null_value
+
+    @property
+    def max_definition_level(self):
+        return self._max_definition_level
+
+    @property
+    def definition_level_bit_width(self):
+        return self._definition_level_bit_width
+
+    @property
+    def max_repetition_level(self):
+        return self._max_repetition_level
+
+    @property
+    def repetition_level_bit_width(self):
+        return self._repetition_level_bit_width
 
 
 class NumparquetSchema:
@@ -114,18 +171,24 @@ class NumparquetSchema:
         if file_metadata.version < 2:
             raise NotImplementedError("Version 1 not supported yet.")
 
-        # What we want to do is (a) save the schema element separately?
-        # and then go through and store a mapping from name to element.
-        # and then we also need ... number of rows, etc.
-        # fmd.key_value_metadata
-        # fmd.num_rows
-        # fmd.row_groups NO
-
         self._num_rows = file_metadata.num_rows
 
-        self._schema_dict = {
-            elt.name: NumparquetSchemaElement(elt) for elt in file_metadata.schema if elt.type is not None
-        }
+        self._schema_dict = {}
+        elements = []
+        num_columns = -1
+        for element in file_metadata.schema:
+            if element.name == "schema":
+                num_columns = element.num_children
+            else:
+                elements.append(element)
+                if len(elements) == 1:
+                    name = element.name
+                if element.num_children is None:
+                    self._schema_dict[name] = NumparquetSchemaElement(elements)
+                    elements = []
+
+        if len(self._schema_dict) != num_columns:
+            raise RuntimeError("Number of schema elements is inconsistent.")
 
         # Count nulls.
         self._null_count = {col: 0 for col in self.columns}
@@ -133,7 +196,9 @@ class NumparquetSchema:
         for row_group in file_metadata.row_groups:
             for row_group_column in row_group.columns:
                 md = row_group_column.meta_data
-                name = md.path_in_schema[-1]
+                # Note: for LIST this is the first element;
+                # for nested I don't know.
+                name = self.get_element_from_path(md.path_in_schema).name
                 self._null_count[name] += md.statistics.null_count
 
         # key-value later.
@@ -149,6 +214,12 @@ class NumparquetSchema:
     def get_null_count(self, column):
         """Get total number of nulls in a column."""
         return self._null_count[column]
+
+    def get_element_from_path(self, path_in_schema):
+        for name in self.columns:
+            if self._schema_dict[name].path_in_schema == path_in_schema:
+                return self._schema_dict[name]
+        raise KeyError(f"Path in schema {path_in_schema} not found.")
 
     def max_definition_level(self, path):
         """Get the max definition level for a given path.

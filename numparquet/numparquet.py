@@ -4,16 +4,21 @@ from .thrift import check_valid_parquet, read_md_length, read_file_metadata, rea
 from .schema import NumparquetSchema
 from .compression import decompress_into
 from .encoding import NumpyBuffer, decode_data
+from .utilities import make_empty_column, update_byte_array_column, compute_repetition_length
 
 
 # TODO:
-#  * test memory usage
-#  * test speed
-#  * add lists (?) these are HARD
-#  * derived types (what do they look like)
+#  * test memory usage CHECK
+#  * test speed CHECK
+#  * test all the logical types
 #  * tests (!)
 #  * fsspec/open file handles.
-
+#  * Was there anything special about S3 in pyarrow?
+#  * metadata keys!
+#  * rename decode functions.
+#  * What do pandas strings look like inside?
+#  * Do we need to optimize string decoding?  Probably.
+#  * Do nullable list tests ... both single values and whole rows.
 
 def read_numparquet(filename, columns=None):
     """
@@ -45,54 +50,25 @@ def read_numparquet(filename, columns=None):
         else:
             read_columns = columns
 
-        # Make the output data dictionary.
-        # Skip if not in read list!
+        # Make an empty output data dictionary.
         data_dict = {}
-        for column in schema.columns:
-            if column not in read_columns:
-                continue
-
-            if schema[column].is_byte_array:
-                # String/byte columns need special handling.
-                data_dict[column] = None
-            elif schema.get_null_count(column) > 0:
-                data_dict[column] = np.ma.masked_array(
-                    data=np.empty(schema.num_rows, dtype=schema[column].dtype),
-                    mask=np.zeros(schema.num_rows, dtype=np.bool_),
-                    fill_value=schema[column].null_value,
-                )
-            else:
-                data_dict[column] = np.empty(schema.num_rows, dtype=schema[column].dtype)
 
         # Loop over the row groups.
         row_group_index = 0
         for row_group in file_metadata.row_groups:
             row_group_rows = row_group.num_rows
-            rgslice = slice(row_group_index, row_group_index + row_group_rows)
 
             for col_group in row_group.columns:
                 col_metadata = col_group.meta_data
                 codec = col_metadata.codec
-                name = col_metadata.path_in_schema[-1]
+                schema_element = schema.get_element_from_path(col_metadata.path_in_schema)
+                name = schema_element.name
 
                 # Skip if not reading.
                 if name not in read_columns:
                     continue
 
                 is_byte_array = schema[name].is_byte_array
-
-                has_definition_data = False
-                if not schema[name].required:
-                    has_definition_data = True
-
-                    # Compute the maximum definition level.
-                    # This is here for use in the future.
-                    max_definition_level = 0
-                    for part in col_metadata.path_in_schema:
-                        if not schema[part].required:
-                            max_definition_level += 1
-
-                    definition_level_bit_width = int(np.ceil(np.log2(max_definition_level + 1)))
 
                 # Seek to the start of the data in this column group.
                 dict_offset = col_metadata.dictionary_page_offset
@@ -104,10 +80,11 @@ def read_numparquet(filename, columns=None):
                     read_dictionary_data = True
                     file_buffer.seek(dict_offset)
 
+                dict_values = None
+
                 # Loop until we have read all the data.
                 col_group_index = 0
                 while col_group_index < row_group_rows:
-
                     if read_dictionary_data:
                         # Note that only the first page can be a dictionary
                         # page; we will have to reset this at the end of the
@@ -144,25 +121,34 @@ def read_numparquet(filename, columns=None):
                     # data.
                     npbuffer = NumpyBuffer(data_page_buffer)
 
-                    # 1. Repetition levels data.  Currently unsupported.
-                    if len(col_metadata.path_in_schema) > 1:
-                        raise NotImplementedError("Repetition level not currently supported.")
+                    # 1. Repetition levels data.
+                    if schema[name].max_repetition_level > 0:
+                        repetition_values, _ = decode_data(
+                            npbuffer,
+                            page_header.data_page_header.repetition_level_encoding,
+                            num_values_in_page,
+                            bit_width=schema[name].repetition_level_bit_width,
+                            read_length=True,
+                        )
+                        repetition_length = compute_repetition_length(repetition_values)
+                    else:
+                        repetition_length = None
 
                     # 2. Definition levels data.  Only for optional columns.
                     #    This tells which are NULL.
-
-                    if has_definition_data:
+                    if schema[name].nullable:
                         definition_values, _ = decode_data(
                             npbuffer,
                             page_header.data_page_header.definition_level_encoding,
                             num_values_in_page,
-                            bit_width=definition_level_bit_width,
+                            bit_width=schema[name].definition_level_bit_width,
                             read_length=True,
                         )
+                    else:
+                        definition_values = None
 
                     # 3. Encoded values.
-
-                    if has_definition_data:
+                    if schema[name].nullable:
                         # Only non-null entries are stored.
                         data_value_count = np.sum(definition_values > 0)
                     else:
@@ -179,39 +165,54 @@ def read_numparquet(filename, columns=None):
                         schema_element=schema[name],
                     )
 
-                    if is_byte_array:
-                        if data_dict[name] is None:
-                            # First batch of rows with this column.
-                            data_dict[name] = np.empty(schema.num_rows, dtype=dict_values.dtype)
-                        else:
-                            # Subsequent batches of rows with this column.
+                    # Make empty column if necessary
+                    if name not in data_dict:
+                        if is_byte_array:
                             if read_dictionary_data:
-                                new_dtype = dict_values.dtype
+                                byte_array_dtype = dict_values.dtype
                             else:
-                                new_dtype = data_values.dtype
-                            if new_dtype.itemsize > data_dict[name].dtype.itemsize:
-                                # The strings got longer; we need to reallocate and
-                                # copy over the other data.
-                                temp = np.empty(schema.num_rows, dtype=new_dtype)
-                                n_copy = row_group_index + col_group_index
-                                temp[0: n_copy] = data_dict[name][0: n_copy]
-                                data_dict[name] = temp
+                                byte_array_dtype = data_values.dtype
+                        else:
+                            byte_array_dtype = None
 
-                    # Fill the output data.
+                        data_dict[name] = make_empty_column(
+                            schema,
+                            name,
+                            repetition_length=repetition_length,
+                            byte_array_dtype=byte_array_dtype,
+                        )
+                    elif is_byte_array:
+                        # Special handling for possible resizing of byte arrays.
+                        data_dict[name] = update_byte_array_column(
+                            data_dict[name],
+                            read_dictionary_data,
+                            dict_values,
+                            data_values,
+                            row_group_index + col_group_index,
+                        )
+
+                    # Make this a utility?
+                    if repetition_length is not None:
+                        rgslice = slice(
+                            row_group_index * repetition_length,
+                            (row_group_index + row_group_rows) * repetition_length,
+                        )
+                    else:
+                        rgslice = slice(row_group_index, row_group_index + row_group_rows)
                     cgslice = slice(col_group_index, col_group_index + num_values_in_page)
                     if use_dictionary_data:
-                        if has_definition_data and (null_count > 0):
+                        if schema[name].nullable and (null_count > 0):
                             non_null = (definition_values > 0)
                             data_dict[name][rgslice][cgslice][non_null] = dict_values[data_values]
-                            data_dict[name][rgslice][cgslice][~non_null] = schema[column].null_value
+                            data_dict[name][rgslice][cgslice][~non_null] = schema[name].null_value
                             data_dict[name].mask[rgslice][cgslice][~non_null] = True
                         else:
                             data_dict[name][rgslice][cgslice] = dict_values[data_values]
                     else:
-                        if has_definition_data and (null_count > 0):
+                        if schema[name].nullable and (null_count > 0):
                             non_null = (definition_values > 0)
                             data_dict[name][rgslice][cgslice][non_null] = data_values
-                            data_dict[name][rgslice][cgslice][~non_null] = schema[column].null_value
+                            data_dict[name][rgslice][cgslice][~non_null] = schema[name].null_value
                             data_dict[name].mask[rgslice][cgslice][~non_null] = True
                         else:
                             data_dict[name][rgslice][cgslice] = data_values
@@ -222,5 +223,11 @@ def read_numparquet(filename, columns=None):
                     read_dictionary_data = False
 
             row_group_index += row_group_rows
+
+    # Reshape any list (2D) arrays.
+    for name in data_dict:
+        if schema[name].is_list:
+            arr = data_dict[name]
+            data_dict[name] = arr.reshape((schema.num_rows, arr.size // schema.num_rows))
 
     return data_dict
