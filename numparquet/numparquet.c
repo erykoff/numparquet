@@ -85,7 +85,7 @@ static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
     uint64_t total = (uint64_t) raw_bytes_size * 8;
     uint64_t index = 0;
     while (total >= width) {
-        // Note zero-padding could produce extra zero values.
+        // Note zero-padding may produce extra zero values.
         if (bits_wnd_r >= 8) {
             bits_wnd_r -= 8;
             bits_wnd_l -= 8;
@@ -113,9 +113,6 @@ static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
  fail:
     Py_XDECREF(raw_bytes_arr);
     Py_XDECREF(value_arr);
-    // if (iter != NULL) {
-    //     NpyIter_Deallocate(iter);
-    // }
 
     return NULL;
 }

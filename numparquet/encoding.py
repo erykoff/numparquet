@@ -112,6 +112,8 @@ def decode_bitpacked(npbuffer, header, width, boolean=False):
     values : `np.ndarray`
         Array of values (np.int32 unless boolean=True)
     """
+    # Note that zero-padding may produce extra zero values.
+    # These should be handled by the calling function.
     num_groups = header >> 1
     count = num_groups * 8
     byte_count = (width * count) // 8
