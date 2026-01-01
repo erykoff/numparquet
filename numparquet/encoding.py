@@ -1,7 +1,7 @@
 import numpy as np
 
 from .thrift import parquet_thrift
-from ._numparquet import _read_bitpacked
+from ._numparquet import _decode_bitpacked
 
 
 class NumpyBuffer:
@@ -47,8 +47,8 @@ class NumpyBuffer:
         return self._size - self._index
 
 
-def read_uleb128(npbuffer):
-    """Read an unsigned int from LEB128 encoding.
+def decode_uleb128(npbuffer):
+    """Decode an unsigned int from LEB128 encoding.
 
     Parameters
     ----------
@@ -71,8 +71,8 @@ def read_uleb128(npbuffer):
     return result
 
 
-def read_rle(npbuffer, header, bit_width):
-    """Read from a buffer a run-length-encoding.
+def decode_rle(npbuffer, header, bit_width):
+    """Decode from a buffer a run-length-encoding.
 
     Parameters
     ----------
@@ -97,8 +97,8 @@ def read_rle(npbuffer, header, bit_width):
     return count, value
 
 
-def read_bitpacked(npbuffer, header, width, boolean=False):
-    """Read from a buffer a set of bit-packed values.
+def decode_bitpacked(npbuffer, header, width, boolean=False):
+    """Decode from a buffer a set of bit-packed values.
 
     Parameters
     ----------
@@ -121,11 +121,11 @@ def read_bitpacked(npbuffer, header, width, boolean=False):
 
     raw_bytes = npbuffer.read(byte_count, dtype=np.uint8)
 
-    return _read_bitpacked(raw_bytes, width, count, boolean=boolean)
+    return _decode_bitpacked(raw_bytes, width, count, boolean=boolean)
 
 
-def read_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
-    """Read RLE/Bit-Packed Hybrid.
+def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
+    """Decode RLE/Bit-Packed Hybrid.
 
     Parameters
     ----------
@@ -148,13 +148,13 @@ def read_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
     n_read = 0
     start_index = npbuffer.index
     while npbuffer.index < (start_index + length):
-        header = read_uleb128(npbuffer)
+        header = decode_uleb128(npbuffer)
         if header & 1 == 0:
-            count, value = read_rle(npbuffer, header, width)
+            count, value = decode_rle(npbuffer, header, width)
             values[index + n_read: index + n_read + count] = value
             n_read += count
         else:
-            bitpacked_values = read_bitpacked(npbuffer, header, width)
+            bitpacked_values = decode_bitpacked(npbuffer, header, width)
             stop_index = len(bitpacked_values)
             if (index + n_read + stop_index) > len(values):
                 stop_index = len(values) - (index + int(n_read))
@@ -203,7 +203,7 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
         elif schema_element.dtype == np.bool_:
             # PLAIN encoding for Boolean uses bit-packed.
             count = npbuffer.remaining
-            values = read_bitpacked(npbuffer, count << 1, 1, boolean=True)[0: num_values]
+            values = decode_bitpacked(npbuffer, count << 1, 1, boolean=True)[0: num_values]
         else:
             # This is a direct translation, and reuses the buffer.
             values = npbuffer.read(count=num_values, dtype=schema_element.native_dtype)
@@ -226,7 +226,7 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
             length = None
 
         while index < num_values:
-            n_read = read_rle_bit_packed_hybrid(npbuffer, bit_width, values, index, length=length)
+            n_read = decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, index, length=length)
             index += n_read
     else:
         raise NotImplementedError("Only RLE and PLAIN so far.")

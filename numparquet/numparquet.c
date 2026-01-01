@@ -26,8 +26,8 @@
 #include <stdint.h>
 
 
-PyDoc_STRVAR(read_bitpacked_doc,
-             "read_bitpacked()\n"
+PyDoc_STRVAR(decode_bitpacked_doc,
+             "decode_bitpacked()\n"
              "--\n\n"
              "Read a bitpacked array.\n"
              "\n"
@@ -45,7 +45,7 @@ PyDoc_STRVAR(read_bitpacked_doc,
              "\n"
              );
 
-static PyObject *read_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwargs) {
+static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwargs) {
     PyObject *raw_bytes_obj = NULL;
     PyObject *raw_bytes_arr, *value_arr = NULL;
 
@@ -121,8 +121,8 @@ static PyObject *read_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwarg
 }
 
 static PyMethodDef numparquet_methods[] = {
-    {"_read_bitpacked", (PyCFunction)(void (*)(void))read_bitpacked,
-     METH_VARARGS | METH_KEYWORDS, read_bitpacked_doc},
+    {"_decode_bitpacked", (PyCFunction)(void (*)(void))decode_bitpacked,
+     METH_VARARGS | METH_KEYWORDS, decode_bitpacked_doc},
     {NULL, NULL, 0, NULL}};
 
 static struct PyModuleDef numparquet_module = {PyModuleDef_HEAD_INIT, "_numparquet", NULL, -1,
