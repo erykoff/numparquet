@@ -40,7 +40,7 @@ def numpy_dict_to_arrow_table(numpy_dict):
         if len(column.shape) > 1:
             val = np.split(np.asarray(column).ravel(), len(column))
             if isinstance(column, np.ma.MaskedArray):
-                mask = np.split(column.mask.ravel(), len(column))
+                raise NotImplementedError("Pyarrow does not support fixed-size lists with nulls")
         else:
             val = np.asarray(column)
             if isinstance(column, np.ma.MaskedArray):
