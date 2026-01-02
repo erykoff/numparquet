@@ -8,17 +8,14 @@ from .utilities import make_empty_column, update_byte_array_column, compute_repe
 
 
 # TODO:
-#  * test memory usage CHECK
-#  * test speed CHECK
-#  * test all the logical types
-#  * tests (!)
-#  * fsspec/open file handles.
-#  * Was there anything special about S3 in pyarrow?
-#  * metadata keys!
-#  * rename decode functions.
-#  * What do pandas strings look like inside?
-#  * Do we need to optimize string decoding?  Probably.
-#  * Do nullable list tests ... both single values and whole rows.
+#  * Add support for float16
+#  * metadata keys
+#  * get schema / return schema
+#  * tests for lists
+#  * tests for strings
+#  * tests for nullable lists (single values and whole rows)
+#  * Accept file handle or fsspec as well as filename.
+#  * Investigate optimizations of string decoding.
 
 def read_numparquet(filename, columns=None):
     """
@@ -35,7 +32,6 @@ def read_numparquet(filename, columns=None):
     -------
     dict_of_arrays : `dict` [`np.ndarray` or `np.ma.maskedarray`]
     """
-    # TODO: allow fsspec or input open handle.
     with open(filename, "rb") as file_buffer:
         if not check_valid_parquet(file_buffer):
             raise IOError("Not a valid parquet file.")
