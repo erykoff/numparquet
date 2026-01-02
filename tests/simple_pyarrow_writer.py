@@ -1,11 +1,8 @@
 import numpy as np
-from math import prod
 
 try:
     import pyarrow as pa
     import pyarrow.parquet as pq
-    # This is necessary for all pyarrow numpy functionality, unfortunately.
-    # import pandas as pd
 except ImportError:
     raise ImportError("pyarrow not found for tests")
 
@@ -24,10 +21,10 @@ def numpy_dict_to_arrow_table(numpy_dict):
 
     for name, column in numpy_dict.items():
         dt = column.dtype
-        if len(dt.shape) > 0:
+        if len(column.shape) > 1:
             arrow_type = pa.list_(
                 pa.from_numpy_dtype(dt.type),
-                prod(dt.shape),
+                column.shape[1],
             )
         elif dt.type == np.datetime64:
             time_unit = "ns" if "ns" in dt.str else "us"
@@ -40,7 +37,7 @@ def numpy_dict_to_arrow_table(numpy_dict):
         type_list.append((name, arrow_type))
 
         mask = None
-        if len(dt.shape) > 0:
+        if len(column.shape) > 1:
             val = np.split(np.asarray(column).ravel(), len(column))
             if isinstance(column, np.ma.MaskedArray):
                 mask = np.split(column.mask.ravel(), len(column))
