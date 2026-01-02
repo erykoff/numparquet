@@ -27,9 +27,7 @@ def numpy_dict_to_arrow_table(numpy_dict):
         dt = column.dtype
         if len(dt.shape) > 0:
             arrow_type = pa.list_(
-                # pa.from_numpy_dtype(np.dtype, dt.subdtype)[0].type
-                pa.from_numpy_dtype(dt.subdtype[0].type),
-                # pa.from_numpy_dtype(cast(tuple[np.dtype, tuple[int, ...]], dt.subdtype)[0].type),
+                pa.from_numpy_dtype(dt.type),
                 prod(dt.shape),
             )
         elif dt.type == np.datetime64:
