@@ -9,7 +9,7 @@ except ImportError:
 import numparquet
 
 
-@pytest.mark.parametrize("dtype", [np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8])
+@pytest.mark.parametrize("dtype", [np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8, np.float16])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
 def test_logical_dtypes_small_few(tmp_path, dtype):
     """Test reading a small table with few unique values."""
@@ -18,7 +18,7 @@ def test_logical_dtypes_small_few(tmp_path, dtype):
     arr[0: 1_000] = 1
     arr[9_000: 10_000] = 1
 
-    if np.issubdtype(dtype, np.signedinteger):
+    if np.issubdtype(dtype, np.signedinteger) or dtype == np.float16:
         arr[2_000: 3_000] = -1
 
     data = {"a": arr}
@@ -32,7 +32,7 @@ def test_logical_dtypes_small_few(tmp_path, dtype):
     np.testing.assert_array_equal(new_data["a"], data["a"])
 
 
-@pytest.mark.parametrize("dtype", [np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8])
+@pytest.mark.parametrize("dtype", [np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8, np.float16])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
 def test_logical_dtypes_small_many(tmp_path, dtype):
     """Test reading a small table with many unique values."""
@@ -52,7 +52,7 @@ def test_logical_dtypes_small_many(tmp_path, dtype):
     np.testing.assert_array_equal(new_data["a"], data["a"])
 
 
-@pytest.mark.parametrize("dtype", [np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8])
+@pytest.mark.parametrize("dtype", [np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8, np.float16])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
 def test_logical_dtypes_large_few(tmp_path, dtype):
     """Test reading a large table with few unique values."""
@@ -61,7 +61,7 @@ def test_logical_dtypes_large_few(tmp_path, dtype):
     arr[0: 1_000] = 1
     arr[900_000: 900_100] = 1
 
-    if np.issubdtype(dtype, np.signedinteger):
+    if np.issubdtype(dtype, np.signedinteger) or dtype == np.float16:
         arr[2_000: 3_000] = -1
 
     data = {"a": arr}

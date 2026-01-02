@@ -46,12 +46,12 @@ class NumparquetSchemaElement:
         elif dtype_element.type == parquet_thrift.Type.BYTE_ARRAY:
             self._is_byte_array = True
             native_dtype = "S1"
+        elif dtype_element.type == parquet_thrift.Type.FIXED_LEN_BYTE_ARRAY:
+            native_dtype = f"S{dtype_element.type_length}"
         elif dtype_element.type is None:
             native_dtype = None
         else:
-            # Note that type_length is FIXED_LEN_BYTE_ARRAY
-            # This is the string maybe?  Will need to work on that.
-            raise NotImplementedError("Sorry; fixed len byte dtypes not supported yet")
+            raise RuntimeError(f"Unknown column dtype {dtype_element.type}")
 
         dtype = None
         if (logicalType := dtype_element.logicalType) is not None:  # noqa: F841
@@ -80,10 +80,14 @@ class NumparquetSchemaElement:
                     raise ValueError("Illegal logicalType!")
             elif logicalType.STRING is not None:
                 dtype = "U1"
+            elif logicalType.FLOAT16 is not None:
+                # Overwrite native_dtype in this case.
+                native_dtype = np.float16
+                dtype = np.float16
             else:
-                raise NotImplementedError("Sorry; other logical types not supported now")
+                raise NotImplementedError(f"LogicalType {logicalType} not supported.")
         elif (converted_type := dtype_element.converted_type) is not None:  # noqa: F841
-            raise NotImplementedError("Sorry; converted_type not implemented yet.")
+            raise NotImplementedError("converted_type not implemented yet.")
         else:
             dtype = native_dtype
 

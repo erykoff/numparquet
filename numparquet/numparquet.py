@@ -8,7 +8,6 @@ from .utilities import make_empty_column, update_byte_array_column, compute_repe
 
 
 # TODO:
-#  * Add support for float16
 #  * Investigate optimizations of string decoding.
 #  * Add support for datetimes, etc.
 
