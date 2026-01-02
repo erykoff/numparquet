@@ -9,13 +9,10 @@ from .utilities import make_empty_column, update_byte_array_column, compute_repe
 
 # TODO:
 #  * Add support for float16
-#  * metadata keys
-#  * get schema / return schema
-#  * Accept file handle or fsspec as well as filename.
 #  * Investigate optimizations of string decoding.
 #  * Add support for datetimes, etc.
 
-def read_numparquet(filename, columns=None, fs=None):
+def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=False):
     """
     Read a numpy dict array thing.
 
@@ -27,12 +24,17 @@ def read_numparquet(filename, columns=None, fs=None):
         Name of columns to read.
     fs : `fsspec.AbstractFileSystem`, optional
         FSSpec filesystem to use to open the file.
+    return_schema : `bool`, optional
+        Additionally return the schema with metadata?
 
     Returns
     -------
     dict_of_arrays : `dict` [`np.ndarray` or `np.ma.maskedarray`]
+        Dictionary of numpy arrays, keyed by column name.
+    schema : `numparquet.NumparquetSchema`, optional
+        Additionally returned if ``return_schema`` is True.
     """
-    with generic_open(filename, fs=fs) as file_buffer:
+    with generic_open(filename_or_handle, fs=fs) as file_buffer:
         if not check_valid_parquet(file_buffer):
             raise IOError("Not a valid parquet file.")
 
@@ -226,4 +228,35 @@ def read_numparquet(filename, columns=None, fs=None):
             arr = data_dict[name]
             data_dict[name] = arr.reshape((schema.num_rows, arr.size // schema.num_rows))
 
-    return data_dict
+    if return_schema:
+        return data_dict, schema
+    else:
+        return data_dict
+
+
+def read_schema(filename_or_handle, fs=None):
+    """
+    Read a numparquet schema.
+
+    Parameters
+    ----------
+    filename_or_handle : `str` or `os.PathLike` or open file handle
+        Input filename, path, or open file handle.
+    fs : `fsspec.AbstractFileSystem`, optional
+        FSSpec filesystem to use to open the file.
+
+    Returns
+    -------
+    schema : `numparquet.NumparquetSchema`
+        Schema for the file.
+    """
+    with generic_open(filename_or_handle, fs=fs) as file_buffer:
+        if not check_valid_parquet(file_buffer):
+            raise IOError("Not a valid parquet file.")
+
+        md_length = read_md_length(file_buffer)
+        file_metadata = read_file_metadata(file_buffer, md_length)
+
+        schema = NumparquetSchema(file_metadata)
+
+    return schema

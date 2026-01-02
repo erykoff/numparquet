@@ -7,14 +7,17 @@ except ImportError:
     raise ImportError("pyarrow not found for tests")
 
 
-def numpy_dict_to_arrow_table(numpy_dict):
+def numpy_dict_to_arrow_table(numpy_dict, metadata={}):
     """Convert a dictionary of numpy arrays to an arrow table.
 
     Parameters
     ----------
+    numpy_dict : `dict` [`str`, `np.ndarray` or `np.ma.MaskedArray`]
+    metadata : `dict` [`str`, `str`], optional
 
     Returns
     -------
+    arrow_table : `pyarrow.Table`
     """
     type_list = []
     arrays = []
@@ -48,14 +51,14 @@ def numpy_dict_to_arrow_table(numpy_dict):
 
         arrays.append(pa.array(val, type=arrow_type, mask=mask))
 
-    schema = pa.schema(type_list)
+    schema = pa.schema(type_list, metadata=metadata)
 
     arrow_table = pa.Table.from_arrays(arrays, schema=schema)
 
     return arrow_table
 
 
-def write_simple_pyarrow_parquet(numpy_dict, fname, row_group_size=None):
-    arrow_table = numpy_dict_to_arrow_table(numpy_dict)
+def write_simple_pyarrow_parquet(numpy_dict, fname, row_group_size=None, metadata={}):
+    arrow_table = numpy_dict_to_arrow_table(numpy_dict, metadata=metadata)
 
     pq.write_table(arrow_table, fname, row_group_size=row_group_size)

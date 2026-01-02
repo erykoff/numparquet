@@ -201,7 +201,14 @@ class NumparquetSchema:
                 name = self.get_element_from_path(md.path_in_schema).name
                 self._null_count[name] += md.statistics.null_count
 
-        # key-value later.
+        # Load metadata.
+        self._metadata = {}
+        self._arrow_schema_encoded = None
+        for kv in file_metadata.key_value_metadata:
+            if kv.key == "ARROW:schema":
+                self._arrow_schema_encoded = kv.value
+            else:
+                self._metadata[kv.key] = kv.value
 
     @property
     def columns(self):
@@ -210,6 +217,14 @@ class NumparquetSchema:
     @property
     def num_rows(self):
         return self._num_rows
+
+    @property
+    def metadata(self):
+        return self._metadata
+
+    @property
+    def arrow_schema_encoded(self):
+        return self._arrow_schema_encoded
 
     def get_null_count(self, column):
         """Get total number of nulls in a column."""
@@ -220,24 +235,6 @@ class NumparquetSchema:
             if self._schema_dict[name].path_in_schema == path_in_schema:
                 return self._schema_dict[name]
         raise KeyError(f"Path in schema {path_in_schema} not found.")
-
-    def max_definition_level(self, path):
-        """Get the max definition level for a given path.
-
-        Parameters
-        ----------
-        path : `list` [`str`]
-
-        Returns
-        -------
-        max_definition_level : `int`
-        """
-        max_level = 0
-        for part in path:
-            if not self._schema_dict[part].required:
-                max_level += 1
-
-        return max_level
 
     def __getitem__(self, key):
         return self._schema_dict[key]
