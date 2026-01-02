@@ -22,7 +22,6 @@ def numpy_dict_to_arrow_table(numpy_dict):
     type_list = []
     arrays = []
 
-    # TODO: put nulls
     for name, column in numpy_dict.items():
         dt = column.dtype
         if len(dt.shape) > 0:
@@ -40,12 +39,17 @@ def numpy_dict_to_arrow_table(numpy_dict):
 
         type_list.append((name, arrow_type))
 
+        mask = None
         if len(dt.shape) > 0:
-            val = np.split(column.ravel(), len(column))
+            val = np.split(np.asarray(column).ravel(), len(column))
+            if isinstance(column, np.ma.MaskedArray):
+                mask = np.split(column.mask.ravel(), len(column))
         else:
-            val = column
+            val = np.asarray(column)
+            if isinstance(column, np.ma.MaskedArray):
+                mask = column.mask
 
-        arrays.append(pa.array(val, type=arrow_type))
+        arrays.append(pa.array(val, type=arrow_type, mask=mask))
 
     schema = pa.schema(type_list)
 
