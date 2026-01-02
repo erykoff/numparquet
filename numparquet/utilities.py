@@ -1,19 +1,22 @@
+import contextlib
+import os
 import numpy as np
 
 
-# Here's the logic that must be implemented ...
-
-
-# NOT BYTE ARRAY
-#  The number of rows is the rep_length * num_rows.
-#  Resize at end.
-#  That will simplify things.
-#  Especially itemsize.
-
-# BYTE ARRAY
-#  Special code.
-#  Call and check.
-#  It calls *this*.
+@contextlib.contextmanager
+def generic_open(path_or_handle, fs=None):
+    if isinstance(path_or_handle, (str, os.PathLike)):
+        if fs is None:
+            with open(path_or_handle, "rb") as fh:
+                yield fh
+        else:
+            with fs.open(path_or_handle) as fh:
+                yield fh
+    elif hasattr(path_or_handle, "read"):
+        # This is an open handle.
+        yield path_or_handle
+    else:
+        raise ValueError("Illegal path or handle provided.")
 
 
 def make_empty_column(schema, name, repetition_length=None, byte_array_dtype=None):

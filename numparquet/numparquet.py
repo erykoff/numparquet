@@ -4,35 +4,35 @@ from .thrift import check_valid_parquet, read_md_length, read_file_metadata, rea
 from .schema import NumparquetSchema
 from .compression import decompress_into
 from .encoding import NumpyBuffer, decode_data
-from .utilities import make_empty_column, update_byte_array_column, compute_repetition_length
+from .utilities import make_empty_column, update_byte_array_column, compute_repetition_length, generic_open
 
 
 # TODO:
 #  * Add support for float16
 #  * metadata keys
 #  * get schema / return schema
-#  * tests for lists
-#  * tests for strings
-#  * tests for nullable lists (single values and whole rows)
 #  * Accept file handle or fsspec as well as filename.
 #  * Investigate optimizations of string decoding.
+#  * Add support for datetimes, etc.
 
-def read_numparquet(filename, columns=None):
+def read_numparquet(filename, columns=None, fs=None):
     """
     Read a numpy dict array thing.
 
     Parameters
     ----------
-    filename : `str`
-        Input filename
+    filename_or_handle : `str` or `os.PathLike` or open file handle
+        Input filename, path, or open file handle.
     columns : `list` [`str`], optional
         Name of columns to read.
+    fs : `fsspec.AbstractFileSystem`, optional
+        FSSpec filesystem to use to open the file.
 
     Returns
     -------
     dict_of_arrays : `dict` [`np.ndarray` or `np.ma.maskedarray`]
     """
-    with open(filename, "rb") as file_buffer:
+    with generic_open(filename, fs=fs) as file_buffer:
         if not check_valid_parquet(file_buffer):
             raise IOError("Not a valid parquet file.")
 

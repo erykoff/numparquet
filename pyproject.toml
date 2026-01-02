@@ -30,7 +30,7 @@ classifiers = [
 home = "https://github.com/erykoff/numparquet"
 
 [project.optional-dependencies]
-test = ["pytest", "pyarrow", "flake8"]
+test = ["pytest", "pyarrow", "flake8", "fsspec"]
 
 [tool.setuptools]
 include-package-data = true
