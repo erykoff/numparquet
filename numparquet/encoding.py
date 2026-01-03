@@ -168,7 +168,14 @@ def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
     return n_read
 
 
-def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=False, schema_element=None):
+def decode_data(
+    npbuffer,
+    encoding,
+    num_values,
+    bit_width=None,
+    read_length=False,
+    schema_element=None,
+):
     """Decode data and return an array.
 
     Parameters
@@ -212,7 +219,6 @@ def decode_data(npbuffer, encoding, num_values, bit_width=None, read_length=Fals
     elif encoding in (
         parquet_thrift.Encoding.RLE,
         parquet_thrift.Encoding.RLE_DICTIONARY,
-        parquet_thrift.Encoding.PLAIN_DICTIONARY,  # For backwards-compatibility
     ):
         if encoding in (parquet_thrift.Encoding.RLE_DICTIONARY, parquet_thrift.Encoding.PLAIN_DICTIONARY):
             # The data page leads with the bit width.

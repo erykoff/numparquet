@@ -17,15 +17,16 @@ class NumparquetSchemaElement:
         else:
             name_element = schema_elements[0]
             if (logicalType := name_element.logicalType) is None:
-                raise RuntimeError("Cannot have multiple schema elements without a logicalType set.")
-            if logicalType.LIST is not None:
+                if name_element.converted_type != parquet_thrift.ConvertedType.LIST:
+                    raise RuntimeError("Multiple schema elements only supports LIST")
+            elif logicalType.LIST is None:
+                raise RuntimeError("Multiple schema elements only supports LIST")
+            else:
                 self._is_list = True
 
                 if len(schema_elements) != 3:
                     raise RuntimeError("List schema elements improperly stored.")
                 dtype_element = schema_elements[2]
-            else:
-                raise NotImplementedError("Only LIST types of multi-schema elements are supported.")
 
         self._name = name_element.name
         self._path_in_schema = [element.name for element in schema_elements]
@@ -93,8 +94,28 @@ class NumparquetSchemaElement:
                     dtype = np.datetime64(0, "ns").dtype
             else:
                 raise NotImplementedError(f"LogicalType {logicalType} not supported.")
-        elif (converted_type := dtype_element.converted_type) is not None:  # noqa: F841
-            raise NotImplementedError("converted_type not implemented yet.")
+
+        elif (converted_type := dtype_element.converted_type) is not None:
+            # Note that this is basically untested since I don't know
+            # how to make the parquet writer use the old format here.
+            if converted_type == parquet_thrift.ConvertedType.UINT_64:
+                dtype = np.uint64
+            elif converted_type == parquet_thrift.ConvertedType.UINT_32:
+                dtype = np.uint32
+            elif converted_type == parquet_thrift.ConvertedType.UINT_16:
+                dtype = np.uint16
+            elif converted_type == parquet_thrift.ConvertedType.UINT_8:
+                dtype = np.uint8
+            elif converted_type == parquet_thrift.ConvertedType.UTF8:
+                dtype = "U1"
+            elif converted_type == parquet_thrift.ConvertedType.TIMESTAMP_MILLIS:
+                dtype = np.datetime64(0, "ms").dtype
+            elif converted_type == parquet_thrift.ConvertedType.TIMESTAMP_MICROS:
+                dtype = np.datetime64(0, "us").dtype
+            elif converted_type == parquet_thrift.ConvertedType.LIST:
+                pass
+            else:
+                raise NotImplementedError(f"Unsupported converted type {converted_type}.")
         else:
             dtype = native_dtype
 
@@ -179,8 +200,7 @@ class NumparquetSchema:
     """Docstring."""
 
     def __init__(self, file_metadata):
-        if file_metadata.version < 2:
-            raise NotImplementedError("Version 1 not supported yet.")
+        self._parquet_version = file_metadata.version
 
         self._num_rows = file_metadata.num_rows
 
@@ -228,6 +248,10 @@ class NumparquetSchema:
     @property
     def num_rows(self):
         return self._num_rows
+
+    @property
+    def parquet_version(self):
+        return self._parquet_version
 
     @property
     def metadata(self):

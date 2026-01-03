@@ -65,7 +65,7 @@ def numpy_dict_to_arrow_table(numpy_dict, metadata={}):
     return arrow_table
 
 
-def write_simple_pyarrow_parquet(numpy_dict, fname, row_group_size=None, metadata={}):
+def write_simple_pyarrow_parquet(numpy_dict, fname, version="2.6", row_group_size=None, metadata={}):
     arrow_table = numpy_dict_to_arrow_table(numpy_dict, metadata=metadata)
 
-    pq.write_table(arrow_table, fname, row_group_size=row_group_size)
+    pq.write_table(arrow_table, fname, row_group_size=row_group_size, version=version)

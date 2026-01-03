@@ -10,9 +10,13 @@ import numparquet
 
 
 @pytest.mark.parametrize("dtype", [np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8, np.float16])
+@pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_logical_dtypes_small_few(tmp_path, dtype):
+def test_logical_dtypes_small_few(tmp_path, dtype, version):
     """Test reading a small table with few unique values."""
+    if version == "1.0" and dtype == np.uint32:
+        pytest.skip("Parquet version 1.0 does not support unsigned 32-bit integers")
+
     arr = np.zeros(10_000, dtype=dtype)
 
     arr[0: 1_000] = 1
@@ -24,7 +28,7 @@ def test_logical_dtypes_small_few(tmp_path, dtype):
     data = {"a": arr}
 
     fname = tmp_path / "logical_small_few.parquet"
-    write_simple_pyarrow_parquet(data, fname)
+    write_simple_pyarrow_parquet(data, fname, version)
 
     new_data = numparquet.read_numparquet(fname)
 

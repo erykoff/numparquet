@@ -10,8 +10,9 @@ import numparquet
 
 
 @pytest.mark.parametrize("dtype", [np.bool_, np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_small_few(tmp_path, dtype):
+def test_basic_dtypes_small_few(tmp_path, dtype, version):
     """Test reading a small table with few unique values."""
     arr = np.zeros(10_000, dtype=dtype)
     if dtype == np.bool_:
@@ -24,7 +25,7 @@ def test_basic_dtypes_small_few(tmp_path, dtype):
     data = {"a": arr}
 
     fname = tmp_path / "basic_small_few.parquet"
-    write_simple_pyarrow_parquet(data, fname)
+    write_simple_pyarrow_parquet(data, fname, version=version)
 
     new_data = numparquet.read_numparquet(fname)
 
@@ -33,15 +34,16 @@ def test_basic_dtypes_small_few(tmp_path, dtype):
 
 
 @pytest.mark.parametrize("dtype", [np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_small_many(tmp_path, dtype):
+def test_basic_dtypes_small_many(tmp_path, dtype, version):
     """Test reading a small table with many unique values."""
     arr = np.arange(10_000, dtype=dtype)
 
     data = {"a": arr}
 
     fname = tmp_path / "basic_small_many.parquet"
-    write_simple_pyarrow_parquet(data, fname)
+    write_simple_pyarrow_parquet(data, fname, version=version)
 
     new_data = numparquet.read_numparquet(fname)
 
@@ -50,8 +52,9 @@ def test_basic_dtypes_small_many(tmp_path, dtype):
 
 
 @pytest.mark.parametrize("dtype", [np.bool_, np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_large_few(tmp_path, dtype):
+def test_basic_dtypes_large_few(tmp_path, dtype, version):
     """Test reading a large table with few unique values."""
     arr = np.zeros(1_000_002, dtype=dtype)
     if dtype == np.bool_:
@@ -64,7 +67,7 @@ def test_basic_dtypes_large_few(tmp_path, dtype):
     data = {"a": arr}
 
     fname = tmp_path / "basic_large_few.parquet"
-    write_simple_pyarrow_parquet(data, fname)
+    write_simple_pyarrow_parquet(data, fname, version=version)
 
     new_data = numparquet.read_numparquet(fname)
 
@@ -73,15 +76,16 @@ def test_basic_dtypes_large_few(tmp_path, dtype):
 
 
 @pytest.mark.parametrize("dtype", [np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_large_many(tmp_path, dtype):
+def test_basic_dtypes_large_many(tmp_path, dtype, version):
     """Test reading a large table with many unique values."""
     arr = np.arange(1_000_002, dtype=dtype)
 
     data = {"a": arr}
 
     fname = tmp_path / "basic_large_many.parquet"
-    write_simple_pyarrow_parquet(data, fname)
+    write_simple_pyarrow_parquet(data, fname, version=version)
 
     new_data = numparquet.read_numparquet(fname)
 

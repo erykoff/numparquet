@@ -10,8 +10,9 @@ import numparquet
 
 
 @pytest.mark.parametrize("dtype", [np.bool_, np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_list_dtypes_small_few(tmp_path, dtype):
+def test_basic_list_dtypes_small_few(tmp_path, dtype, version):
     """Test reading a small table with few unique values."""
     arr = np.zeros((10_000, 4), dtype=dtype)
     if dtype == np.bool_:
@@ -24,7 +25,7 @@ def test_basic_list_dtypes_small_few(tmp_path, dtype):
     data = {"a": arr}
 
     fname = tmp_path / "basic_list_small_few.parquet"
-    write_simple_pyarrow_parquet(data, fname)
+    write_simple_pyarrow_parquet(data, fname, version=version)
 
     new_data = numparquet.read_numparquet(fname)
 

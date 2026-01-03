@@ -4,12 +4,22 @@ from .thrift import check_valid_parquet, read_md_length, read_file_metadata, rea
 from .schema import NumparquetSchema
 from .compression import decompress_into
 from .encoding import NumpyBuffer, decode_data
-from .utilities import make_empty_column, update_byte_array_column, compute_repetition_length, generic_open
+from .utilities import (
+    make_empty_column,
+    update_byte_array_column,
+    compute_repetition_length,
+    generic_open,
+    translate_encoding,
+)
 
 
 # TODO:
 #  * Investigate optimizations of string decoding.
-#  * Add support for datetimes, etc.
+#  * Schema docstrings.
+#  * Schema repr.
+#  * Test different column compressions!
+#  * byte_stream_split support?
+#  * Test byte_stream_split writing and look at file sizes...
 
 def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=False):
     """
@@ -98,7 +108,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
 
                         dict_values, _ = decode_data(
                             dict_npbuffer,
-                            page_header.dictionary_page_header.encoding,
+                            translate_encoding(schema, True, page_header.dictionary_page_header.encoding),
                             page_header.dictionary_page_header.num_values,
                             schema_element=schema[name],
                         )
@@ -156,7 +166,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
 
                     data_values, use_dictionary_data = decode_data(
                         npbuffer,
-                        page_header.data_page_header.encoding,
+                        translate_encoding(schema, False, page_header.data_page_header.encoding),
                         data_value_count,
                         read_length=False,
                         schema_element=schema[name],

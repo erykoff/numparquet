@@ -126,3 +126,30 @@ def compute_repetition_length(repetition_values):
         raise NotImplementedError("Only fixed width lists are supported.")
 
     return rep_length
+
+
+def translate_encoding(schema, is_dictionary_header, encoding):
+    """Translate an encoding from parquet v1 to v2 if necessary.
+
+    Parameters
+    ----------
+    schema : `numparquet.NumparquetSchema`
+    is_dictionary_header : `bool`
+    encoding : `int`
+
+    Returns
+    -------
+    encoding2 : `int`
+    """
+    if schema.parquet_version == 2:
+        return encoding
+
+    from .thrift import parquet_thrift
+
+    if encoding == parquet_thrift.Encoding.PLAIN_DICTIONARY:
+        if is_dictionary_header:
+            return parquet_thrift.Encoding.PLAIN
+        else:
+            return parquet_thrift.Encoding.RLE_DICTIONARY
+
+    return encoding
