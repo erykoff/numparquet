@@ -19,7 +19,6 @@ def decompress_into(codec, in_buffer, out_buffer):
 
         snappy.decompress_raw_into(in_buffer, out_buffer)
     elif codec == parquet_thrift.CompressionCodec.UNCOMPRESSED:
-        # This may work.
         np.copyto(out_buffer, in_buffer, casting="no")
     elif codec == parquet_thrift.CompressionCodec.GZIP:
         from cramjam import gzip
