@@ -84,6 +84,13 @@ class NumparquetSchemaElement:
                 # Overwrite native_dtype in this case.
                 native_dtype = np.float16
                 dtype = np.float16
+            elif logicalType.TIMESTAMP is not None:
+                if logicalType.TIMESTAMP.unit.MILLIS is not None:
+                    dtype = np.datetime64(0, "ms").dtype
+                elif logicalType.TIMESTAMP.unit.MICROS is not None:
+                    dtype = np.datetime64(0, "us").dtype
+                elif logicalType.TIMESTAMP.unit.NANOS is not None:
+                    dtype = np.datetime64(0, "ns").dtype
             else:
                 raise NotImplementedError(f"LogicalType {logicalType} not supported.")
         elif (converted_type := dtype_element.converted_type) is not None:  # noqa: F841

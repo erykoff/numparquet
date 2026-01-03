@@ -30,7 +30,14 @@ def numpy_dict_to_arrow_table(numpy_dict, metadata={}):
                 column.shape[1],
             )
         elif dt.type == np.datetime64:
-            time_unit = "ns" if "ns" in dt.str else "us"
+            if "ns" in dt.str:
+                time_unit = "ns"
+            elif "us" in dt.str:
+                time_unit = "us"
+            elif "ms" in dt.str:
+                time_unit = "ms"
+            else:
+                raise ValueError("Unsupported date type")
             # The pa.timestamp() is the correct datatype to round-trip
             # a numpy datetime64[ns] or datetime[us] array.
             arrow_type = pa.timestamp(time_unit)
