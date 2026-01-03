@@ -10,10 +10,10 @@ It is designed to be extremely memory efficient (up to 4x less overhead compared
 Currently, `numparquet` supports the following Parquet features:
 
 * Basic datatypes (boolean, int32, int64, float32, float64).
-* Logical datatypes (int8, uint8, int16, uint16, uint32, uint64, unicode strings and byte strings).
+* Logical datatypes (int8, uint8, int16, uint16, uint32, uint64, unicode strings, byte strings, datetime64, and float16).
 * Fixed length list/array columns (but not yet variable length list/array columns).
 * Nulls via numpy masked arrays.
-* Column compression via snappy, gzip, brotli, and zstd (via [cramjam](https://docs.rs/cramjam/latest/cramjam/)).
+* Column compression with snappy, gzip, brotli, and zstd (via [cramjam](https://docs.rs/cramjam/latest/cramjam/)).
 
 ## Requirements
 
