@@ -81,7 +81,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
 
                 # Loop until we have read all the data.
                 col_group_index = 0
-                while col_group_index < row_group_rows:
+                while col_group_index < col_metadata.num_values:
                     if read_dictionary_data:
                         # Note that only the first page can be a dictionary
                         # page; we will have to reset this at the end of the

@@ -120,7 +120,9 @@ def compute_repetition_length(repetition_values):
     rep_length = int(zeros[1] - zeros[0])
 
     # Check that these are aligned.
-    if not np.all(zeros % rep_length == 0):
+    # We need to subtract off the first index for column chunks which
+    # may not be aligned with the multi-dimensional array.
+    if not np.all((zeros - zeros[0]) % rep_length == 0):
         raise NotImplementedError("Only fixed width lists are supported.")
 
     return rep_length
