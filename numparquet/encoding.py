@@ -168,6 +168,43 @@ def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
     return n_read
 
 
+def decode_byte_stream_split(npbuffer, count, dtype):
+    """Decode byte stream split data.
+
+    This encoding creates K byte-streams of length N where K is the size in
+    bytes of the data type and N is the number of elements in the data
+    sequence.
+
+    The bytes of each value are scattered to the corresponding streams.
+    The 0-th byte goes to the 0-th stream, the 1st byte goes to the 1st
+    stream and so on. The streams are concatenated in the following order:
+    0th stream, 1st stream, etc.
+
+    Parameters
+    ----------
+    npbuffer : `NumpyBuffer`
+    count : `int`
+    dtype : `np.dtype`
+
+    Returns
+    -------
+    values : `np.ndarray`
+    """
+    values = np.empty(count, dtype=dtype)
+    n_stream = values.dtype.itemsize
+
+    # value_buffer is a byte-wise view of the values array.
+    value_buffer = np.frombuffer(values, dtype=np.uint8)
+    # split_values is the byte-wise view of the encoded array.
+    split_values = npbuffer.read(count=count * n_stream, dtype=np.uint8)
+
+    # Reconstruct the values from the concatenated streams.
+    for i in range(n_stream):
+        value_buffer[i::n_stream] = split_values[i * count: (i + 1) * count]
+
+    return values
+
+
 def decode_data(
     npbuffer,
     encoding,
@@ -236,7 +273,9 @@ def decode_data(
         while index < num_values:
             n_read = decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, index, length=length)
             index += n_read
+    elif encoding == parquet_thrift.Encoding.BYTE_STREAM_SPLIT:
+        values = decode_byte_stream_split(npbuffer, num_values, schema_element.native_dtype)
     else:
-        raise NotImplementedError("Only RLE and PLAIN so far.")
+        raise NotImplementedError(f"Encoding {encoding} not supported.")
 
     return values, use_dictionary_data

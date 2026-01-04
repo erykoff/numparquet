@@ -72,6 +72,8 @@ def write_simple_pyarrow_parquet(
     row_group_size=None,
     metadata={},
     compression="snappy",
+    use_dictionary=True,
+    use_byte_stream_split=False,
 ):
     arrow_table = numpy_dict_to_arrow_table(numpy_dict, metadata=metadata)
 
@@ -81,4 +83,6 @@ def write_simple_pyarrow_parquet(
         row_group_size=row_group_size,
         version=version,
         compression=compression,
+        use_dictionary=use_dictionary,
+        use_byte_stream_split=use_byte_stream_split,
     )
