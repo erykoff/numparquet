@@ -16,7 +16,7 @@ class NumparquetSchemaElement:
     def __init__(self, schema_elements):
 
         self._is_list = False
-        self._list_length = 0
+        self._list_length = -1
 
         if len(schema_elements) == 1:
             name_element = schema_elements[0]
@@ -192,6 +192,14 @@ class NumparquetSchemaElement:
         return self._is_list
 
     @property
+    def list_length(self):
+        return self._list_length
+
+    @list_length.setter
+    def list_length(self, value):
+        self._list_length = value
+
+    @property
     def null_value(self):
         return self._null_value
 
@@ -211,11 +219,34 @@ class NumparquetSchemaElement:
     def repetition_level_bit_width(self):
         return self._repetition_level_bit_width
 
+    @property
+    def description(self):
+        desc = f"'{self.name}': {self.dtype_name}"
+        if self.is_list:
+            desc += ", list"
+            if self._list_length < 0:
+                desc += " (unknown length)"
+            else:
+                desc += f" ({self._list_length} elements)"
+        if self.nullable:
+            desc += ", nullable"
+
+        return desc
+
     def __repr__(self):
+        if self._is_list:
+            list_str = "is_list=False"
+        else:
+            list_str = "is_list=True"
+            if self._list_length < 0:
+                list_str += " (unknown length)"
+            else:
+                list_str += f" ({self._list_length} elements)"
+
         parts = [
             f"name='{self.name}'",
             f"dtype={self.dtype_name}",
-            f"is_list={self.is_list}",
+            list_str,
             f"nullable={self.nullable}",
         ]
 
@@ -307,14 +338,9 @@ class NumparquetSchema:
         return self._schema_dict[key]
 
     def __repr__(self):
-        lines = []
+        lines = ["-- columns --"]
         for column, element in self._schema_dict.items():
-            line = f"'{column}': {element.dtype_name}"
-            if element.is_list:
-                line += ", list"
-            if element.nullable:
-                line += ", nullable"
-            lines.append(line)
+            lines.append(element.description)
         if len(self._metadata) > 0:
             lines.append("-- metadata --")
             for key, value in self._metadata.items():

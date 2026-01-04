@@ -86,3 +86,26 @@ def test_schema_repr(tmp_path, dtype):
     new_schema = numparquet.read_schema(fname)
 
     _ = repr(new_schema)
+
+
+@pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
+def test_list_schema_repr(tmp_path):
+    """Test that list schema repr works."""
+    data = {"a": np.zeros((100, 10), dtype=np.int32)}
+
+    metadata = {"md1": "a first string", "md2": "a slightly longer string is here."}
+
+    fname = tmp_path / "schema_testing.parquet"
+    write_simple_pyarrow_parquet(data, fname, metadata=metadata)
+
+    new_schema = numparquet.read_schema(fname)
+
+    repr1 = repr(new_schema)
+
+    assert "list (unknown length)" in repr1
+
+    _, new_schema2 = numparquet.read_numparquet(fname, return_schema=True)
+
+    repr2 = repr(new_schema2)
+
+    assert "list (10 elements)" in repr2

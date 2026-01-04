@@ -15,8 +15,8 @@ from .utilities import (
 
 # TODO:
 #  * Investigate optimizations of string decoding.
-#  * Schema docstrings.
-#  * Schema repr.
+#  * data page v2 support
+#  * variable length lists?
 
 def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=False):
     """
@@ -135,6 +135,10 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                             read_length=True,
                         )
                         repetition_length = compute_repetition_length(repetition_values)
+                        if schema[name].list_length < 0:
+                            schema[name].list_length = repetition_length
+                        elif repetition_length != schema[name].list_length:
+                            raise NotImplementedError("Variable length lists not supported.")
                     else:
                         repetition_length = None
 
