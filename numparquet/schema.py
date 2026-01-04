@@ -235,13 +235,13 @@ class NumparquetSchemaElement:
 
     def __repr__(self):
         if self._is_list:
-            list_str = "is_list=False"
-        else:
             list_str = "is_list=True"
             if self._list_length < 0:
                 list_str += " (unknown length)"
             else:
                 list_str += f" ({self._list_length} elements)"
+        else:
+            list_str = "is_list=False"
 
         parts = [
             f"name='{self.name}'",
