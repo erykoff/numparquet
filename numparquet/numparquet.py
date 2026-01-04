@@ -17,9 +17,6 @@ from .utilities import (
 #  * Investigate optimizations of string decoding.
 #  * Schema docstrings.
 #  * Schema repr.
-#  * Test different column compressions!
-#  * byte_stream_split support?
-#  * Test byte_stream_split writing and look at file sizes...
 
 def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=False):
     """

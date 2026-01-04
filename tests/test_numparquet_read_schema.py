@@ -21,7 +21,7 @@ def test_read_table_and_schema(tmp_path):
 
     metadata = {"md1": "a first string", "md2": "a slightly longer string is here."}
 
-    fname = tmp_path / "basic_small_few.parquet"
+    fname = tmp_path / "schema_testing.parquet"
     write_simple_pyarrow_parquet(data, fname, metadata=metadata)
 
     new_data, new_schema = numparquet.read_numparquet(fname, return_schema=True)
@@ -54,7 +54,7 @@ def test_read_schema(tmp_path):
 
     metadata = {"md1": "a first string", "md2": "a slightly longer string is here."}
 
-    fname = tmp_path / "basic_small_few.parquet"
+    fname = tmp_path / "schema_testing.parquet"
     write_simple_pyarrow_parquet(data, fname, metadata=metadata)
 
     new_schema = numparquet.read_schema(fname)
@@ -68,3 +68,21 @@ def test_read_schema(tmp_path):
 
     assert len(new_schema.columns) == 2
     assert new_schema.columns == ["a", "b"]
+
+
+@pytest.mark.parametrize("dtype", [np.bool_, np.int32, np.int64, np.float32, np.float64,
+                                   np.uint64, np.uint32, np.int16, np.uint16, np.int8, np.uint8, np.float16,
+                                   "S5", "U5"])
+@pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
+def test_schema_repr(tmp_path, dtype):
+    """Test that the schema repr works."""
+    data = {"a": np.zeros(100, dtype=dtype)}
+
+    metadata = {"md1": "a first string", "md2": "a slightly longer string is here."}
+
+    fname = tmp_path / "schema_testing.parquet"
+    write_simple_pyarrow_parquet(data, fname, metadata=metadata)
+
+    new_schema = numparquet.read_schema(fname)
+
+    _ = repr(new_schema)

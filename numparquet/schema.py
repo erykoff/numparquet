@@ -4,7 +4,14 @@ from .thrift import parquet_thrift
 
 
 class NumparquetSchemaElement:
-    """Docstring."""
+    """A schema element for a NumparquetSchema.
+
+    Parameters
+    ----------
+    schema_elements : `list` [`parquet_thrift.SchemaElement`]
+        The set of thrift serialized schema elements that describe a
+        column, including the parent and all children elements.
+    """
 
     def __init__(self, schema_elements):
 
@@ -168,6 +175,15 @@ class NumparquetSchemaElement:
         return self._dtype
 
     @property
+    def dtype_name(self):
+        if self._dtype == "S1":
+            return "bytes"
+        elif self._dtype == "U1":
+            return "string"
+        else:
+            return np.dtype(self._dtype).name
+
+    @property
     def is_byte_array(self):
         return self._is_byte_array
 
@@ -195,9 +211,25 @@ class NumparquetSchemaElement:
     def repetition_level_bit_width(self):
         return self._repetition_level_bit_width
 
+    def __repr__(self):
+        parts = [
+            f"name='{self.name}'",
+            f"dtype={self.dtype_name}",
+            f"is_list={self.is_list}",
+            f"nullable={self.nullable}",
+        ]
+
+        return "NumparquetSchemaElement(" + ", ".join(parts) + ")"
+
 
 class NumparquetSchema:
-    """Docstring."""
+    """A Numparquet schema.
+
+    Parameters
+    ----------
+    file_metadata : `parquet_thrift.FileMetadata`
+        The thrift serialized file metadata.
+    """
 
     def __init__(self, file_metadata):
         self._parquet_version = file_metadata.version
@@ -274,4 +306,19 @@ class NumparquetSchema:
     def __getitem__(self, key):
         return self._schema_dict[key]
 
-    # TODO: Make a nice __repr__.
+    def __repr__(self):
+        lines = []
+        for column, element in self._schema_dict.items():
+            line = f"'{column}': {element.dtype_name}"
+            if element.is_list:
+                line += ", list"
+            if element.nullable:
+                line += ", nullable"
+            lines.append(line)
+        if len(self._metadata) > 0:
+            lines.append("-- metadata --")
+            for key, value in self._metadata.items():
+                line = f"'{key}': '{value}'"
+                lines.append(line)
+
+        return "\n".join(lines)
