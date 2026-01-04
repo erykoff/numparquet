@@ -13,8 +13,16 @@ import numparquet
 @pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.parametrize("use_dictionary", [True, False])
 @pytest.mark.parametrize("use_byte_stream_split", [False, True])
+@pytest.mark.parametrize("data_page_version", ["1.0", "2.0"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_small_few(tmp_path, dtype, version, use_dictionary, use_byte_stream_split):
+def test_basic_dtypes_small_few(
+    tmp_path,
+    dtype,
+    version,
+    use_dictionary,
+    use_byte_stream_split,
+    data_page_version,
+):
     """Test reading a small table with few unique values."""
     if dtype == np.bool_ and use_byte_stream_split:
         pytest.skip("Byte stream split not used with booleans.")
@@ -36,6 +44,7 @@ def test_basic_dtypes_small_few(tmp_path, dtype, version, use_dictionary, use_by
         version=version,
         use_dictionary=use_dictionary,
         use_byte_stream_split=use_byte_stream_split,
+        data_page_version=data_page_version,
     )
 
     new_data = numparquet.read_numparquet(fname)
@@ -48,8 +57,16 @@ def test_basic_dtypes_small_few(tmp_path, dtype, version, use_dictionary, use_by
 @pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.parametrize("use_dictionary", [True, False])
 @pytest.mark.parametrize("use_byte_stream_split", [False, True])
+@pytest.mark.parametrize("data_page_version", ["1.0", "2.0"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_small_many(tmp_path, dtype, version, use_dictionary, use_byte_stream_split):
+def test_basic_dtypes_small_many(
+    tmp_path,
+    dtype,
+    version,
+    use_dictionary,
+    use_byte_stream_split,
+    data_page_version,
+):
     """Test reading a small table with many unique values."""
     arr = np.arange(10_000, dtype=dtype)
 
@@ -62,6 +79,7 @@ def test_basic_dtypes_small_many(tmp_path, dtype, version, use_dictionary, use_b
         version=version,
         use_dictionary=use_dictionary,
         use_byte_stream_split=use_byte_stream_split,
+        data_page_version=data_page_version,
     )
 
     new_data = numparquet.read_numparquet(fname)
@@ -74,8 +92,16 @@ def test_basic_dtypes_small_many(tmp_path, dtype, version, use_dictionary, use_b
 @pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.parametrize("use_dictionary", [True, False])
 @pytest.mark.parametrize("use_byte_stream_split", [False, True])
+@pytest.mark.parametrize("data_page_version", ["1.0", "2.0"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_large_few(tmp_path, dtype, version, use_dictionary, use_byte_stream_split):
+def test_basic_dtypes_large_few(
+    tmp_path,
+    dtype,
+    version,
+    use_dictionary,
+    use_byte_stream_split,
+    data_page_version,
+):
     """Test reading a large table with few unique values."""
     if dtype == np.bool_ and use_byte_stream_split:
         pytest.skip("Byte stream split not used with booleans.")
@@ -97,6 +123,7 @@ def test_basic_dtypes_large_few(tmp_path, dtype, version, use_dictionary, use_by
         version=version,
         use_dictionary=use_dictionary,
         use_byte_stream_split=use_byte_stream_split,
+        data_page_version=data_page_version,
     )
 
     new_data = numparquet.read_numparquet(fname)
@@ -109,8 +136,16 @@ def test_basic_dtypes_large_few(tmp_path, dtype, version, use_dictionary, use_by
 @pytest.mark.parametrize("version", ["1.0", "2.4", "2.6"])
 @pytest.mark.parametrize("use_dictionary", [True, False])
 @pytest.mark.parametrize("use_byte_stream_split", [False, True])
+@pytest.mark.parametrize("data_page_version", ["1.0", "2.0"])
 @pytest.mark.skipif(write_simple_pyarrow_parquet is None, reason="pyarrow not installed")
-def test_basic_dtypes_large_many(tmp_path, dtype, version, use_dictionary, use_byte_stream_split):
+def test_basic_dtypes_large_many(
+    tmp_path,
+    dtype,
+    version,
+    use_dictionary,
+    use_byte_stream_split,
+    data_page_version,
+):
     """Test reading a large table with many unique values."""
     arr = np.arange(1_000_002, dtype=dtype)
 
@@ -123,6 +158,7 @@ def test_basic_dtypes_large_many(tmp_path, dtype, version, use_dictionary, use_b
         version=version,
         use_dictionary=use_dictionary,
         use_byte_stream_split=use_byte_stream_split,
+        data_page_version=data_page_version,
     )
 
     new_data = numparquet.read_numparquet(fname)

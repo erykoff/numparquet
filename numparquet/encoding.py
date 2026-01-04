@@ -5,6 +5,13 @@ from ._numparquet import _decode_bitpacked
 
 
 class NumpyBuffer:
+    """Container class for numpy buffer utilities.
+
+    Parameters
+    ----------
+    buffer : `np.ndarray`
+        Numpy byte array with dtype "S1".
+    """
     def __init__(self, buffer):
         self._buffer = buffer
         self._index = 0
@@ -13,6 +20,24 @@ class NumpyBuffer:
         # Note: check for overruns
 
     def read(self, count=-1, dtype=np.dtype("S1")):
+        """Read bytes from the buffer and increment the index.
+
+        This returns a no-copy view to the underlying buffer.
+
+        Parameters
+        ----------
+        count : `int`, optional
+            Number of elements to read.  -1 means read all.
+            Number of bytes read will be width of ``dtype`` times
+            the count.
+        dtype : `np.dtype`, optional
+            Datatype for output data.
+
+        Returns
+        -------
+        result : `np.ndarray`
+            Result array with requested dtype.
+        """
         dt = np.dtype(dtype)
         itemsize = dt.itemsize
 
@@ -30,6 +55,16 @@ class NumpyBuffer:
         return res
 
     def readinto(self, out):
+        """Read bytes from the buffer into a second buffer.
+
+        This returns a copy of the underlying data.
+
+        Parameters
+        ----------
+        out : `np.ndarray`
+            Output buffer, byte type "S1".  Number of bytes read will equal
+            length of the buffer.
+        """
         out_bytes = np.frombuffer(out.data, dtype="S1")
         out_bytes[:] = self._buffer[self._index: self._index + out.nbytes]
         self._index += out.nbytes
@@ -50,13 +85,17 @@ class NumpyBuffer:
 def decode_uleb128(npbuffer):
     """Decode an unsigned int from LEB128 encoding.
 
+    See https://en.wikipedia.org/wiki/LEB128
+
     Parameters
     ----------
     npbuffer : `NumpyBuffer`
+        Buffer to read data.
 
     Returns
     -------
-    value : `np.uint16`
+    value : `np.uint64`
+        Decoded value.
     """
     # https://en.wikipedia.org/wiki/LEB128
     result = np.uint64(0)
@@ -77,8 +116,11 @@ def decode_rle(npbuffer, header, bit_width):
     Parameters
     ----------
     npbuffer : `NumpyBuffer`
+        Numpy buffer object to read from.
     header : `np.uint64`
+        Header value for this chunk.  Count will be header >> 1.
     bit_width : `int`
+        Bit width of the packed array.
 
     Returns
     -------
@@ -103,9 +145,13 @@ def decode_bitpacked(npbuffer, header, width, boolean=False):
     Parameters
     ----------
     npbuffer : `NumpyBuffer`
+        Numpy buffer object to read from.
     header : `np.uint64`
+        Header value for this chunk.  Count will be header >> 1.
     width : `int`
+        Bit width of packed array.
     boolean : `bool`, optional
+        Is this a boolean array?
 
     Returns
     -------
@@ -126,26 +172,30 @@ def decode_bitpacked(npbuffer, header, width, boolean=False):
     return _decode_bitpacked(raw_bytes, width, count, boolean=boolean)
 
 
-def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length=None):
+def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length):
     """Decode RLE/Bit-Packed Hybrid.
 
     Parameters
     ----------
     npbuffer : `NumpyBuffer`
+        Numpy buffer object.
     width : `int`
+        Bit width of the packed data.
     values : `np.ndarray`
+        Array of output values.
     index : `int`
-    length : `int`, optional
+        Index of output values to start filling.
+    length : `int`
+        Length of the data in the buffer.
 
     Returns
     -------
     n_read : `int`
+        Number of values read.
     """
-    if length is None:
-        length = npbuffer.read(1, np.int32)[0]
-        if length == 0:
-            return np.zeros(0, dtype=np.int32)
-        npbuffer = NumpyBuffer(np.frombuffer(npbuffer.read(length).data, dtype="S1"))
+    if length == 0:
+        # There is nothing to read.
+        return 0
 
     n_read = 0
     start_index = npbuffer.index
@@ -183,12 +233,16 @@ def decode_byte_stream_split(npbuffer, count, dtype):
     Parameters
     ----------
     npbuffer : `NumpyBuffer`
+        Numpy buffer object.
     count : `int`
+        Number of values to read.
     dtype : `np.dtype`
+        Datatype of the split values.
 
     Returns
     -------
     values : `np.ndarray`
+        Array of decoded values.
     """
     values = np.empty(count, dtype=dtype)
     n_stream = values.dtype.itemsize
@@ -209,8 +263,8 @@ def decode_data(
     npbuffer,
     encoding,
     num_values,
-    bit_width=None,
-    read_length=False,
+    bit_width=1,
+    length=None,
     schema_element=None,
 ):
     """Decode data and return an array.
@@ -218,15 +272,24 @@ def decode_data(
     Parameters
     ----------
     npbuffer : `NumpyBuffer`
+        Numpy buffer object.
     encoding : `int`
+        Parquet thrift encoding key.
     num_values : `int`
+        Number of values expected.
     bit_width : `int`, optional
-    read_length : `bool`, optional
+        Width in bits of any bit packed or RLE/bit-packed values.
+    length : `int`, optional
+        Length of the data in the buffer. Specified for data page v2
+        RLE encoding of definition, repetition, and boolean values.
     schema_element : `NumparquetSchemaElement`, optional
+        Schema element.  Used for data decoding but not definition/
+        repetition encoding.
 
     Returns
     -------
     values : `np.ndarray`
+        Array of decoded values.
     use_dictionary_data : `bool`
         These data should be used with dictionary data.
     """
@@ -257,21 +320,20 @@ def decode_data(
         parquet_thrift.Encoding.RLE,
         parquet_thrift.Encoding.RLE_DICTIONARY,
     ):
-        if encoding in (parquet_thrift.Encoding.RLE_DICTIONARY, parquet_thrift.Encoding.PLAIN_DICTIONARY):
+        if encoding == parquet_thrift.Encoding.RLE_DICTIONARY:
             # The data page leads with the bit width.
             bit_width = int(npbuffer.read(1, dtype=np.uint8)[0])
             use_dictionary_data = True
+            length = npbuffer.remaining
+        elif encoding == parquet_thrift.Encoding.RLE:
+            if length is None:
+                length = npbuffer.read(1, np.int32)[0]
 
         index = 0
         values = np.zeros(num_values, dtype=np.int32)
 
-        if not read_length:
-            length = npbuffer.remaining
-        else:
-            length = None
-
         while index < num_values:
-            n_read = decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, index, length=length)
+            n_read = decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, index, length)
             index += n_read
     elif encoding == parquet_thrift.Encoding.BYTE_STREAM_SPLIT:
         values = decode_byte_stream_split(npbuffer, num_values, schema_element.native_dtype)

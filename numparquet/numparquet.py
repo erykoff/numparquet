@@ -1,6 +1,6 @@
 import numpy as np
 
-from .thrift import check_valid_parquet, read_md_length, read_file_metadata, read_page_header
+from .thrift import check_valid_parquet, read_md_length, read_file_metadata, read_page_header, parquet_thrift
 from .schema import NumparquetSchema
 from .compression import decompress_into
 from .encoding import NumpyBuffer, decode_data
@@ -113,13 +113,52 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                     # Read the data page and uncompress it.
                     page_header = read_page_header(file_buffer)
 
-                    num_values_in_page = page_header.data_page_header.num_values
-
                     read_buffer = np.empty(page_header.compressed_page_size, dtype="S1")
                     file_buffer.readinto(read_buffer)
-
                     data_page_buffer = np.empty(page_header.uncompressed_page_size, dtype="S1")
-                    decompress_into(codec, read_buffer, data_page_buffer)
+
+                    has_v1_header = page_header.data_page_header is not None
+                    if has_v1_header:
+                        header_v1 = page_header.data_page_header
+                        num_values_in_page = header_v1.num_values
+                        encoding = header_v1.encoding
+                        # For v1 header we read the length from the data.
+                        repetition_level_encoding = header_v1.repetition_level_encoding
+                        repetition_level_length = None
+                        definition_level_encoding = header_v1.definition_level_encoding
+                        definition_level_length = None
+
+                        # For v1 header, the full page is compressed together.
+                        decompress_into(codec, read_buffer, data_page_buffer)
+                    else:
+                        header_v2 = page_header.data_page_header_v2
+                        num_values_in_page = header_v2.num_values
+                        encoding = header_v2.encoding
+                        # For v2 header the encoding is always RLE and the length
+                        # is in the header.
+                        repetition_level_encoding = parquet_thrift.Encoding.RLE
+                        repetition_level_length = header_v2.repetition_levels_byte_length
+                        definition_level_encoding = parquet_thrift.Encoding.RLE
+                        definition_level_length = header_v2.definition_levels_byte_length
+
+                        # For v2 header, compression is optional and partial.
+                        if header_v2.is_compressed:
+                            # The repetition and definition level data are not
+                            # compressed.
+                            uncompressed_length = repetition_level_length + definition_level_length
+                            np.copyto(
+                                data_page_buffer[0: uncompressed_length],
+                                read_buffer[0: uncompressed_length],
+                                casting="no",
+                            )
+                            decompress_into(
+                                codec,
+                                read_buffer[uncompressed_length:],
+                                data_page_buffer[uncompressed_length:],
+                            )
+                        else:
+                            # Compression was off for this section; do a straight copy.
+                            np.copyto(data_page_buffer, read_buffer, casting="no")
 
                     # This is a useful container for operating on the decompressed
                     # data.
@@ -129,10 +168,10 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                     if schema[name].max_repetition_level > 0:
                         repetition_values, _ = decode_data(
                             npbuffer,
-                            page_header.data_page_header.repetition_level_encoding,
+                            repetition_level_encoding,
                             num_values_in_page,
                             bit_width=schema[name].repetition_level_bit_width,
-                            read_length=True,
+                            length=repetition_level_length,
                         )
                         repetition_length = compute_repetition_length(repetition_values)
                         if schema[name].list_length < 0:
@@ -147,10 +186,10 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                     if schema[name].nullable:
                         definition_values, _ = decode_data(
                             npbuffer,
-                            page_header.data_page_header.definition_level_encoding,
+                            definition_level_encoding,
                             num_values_in_page,
                             bit_width=schema[name].definition_level_bit_width,
-                            read_length=True,
+                            length=definition_level_length,
                         )
                     else:
                         definition_values = None
@@ -167,9 +206,8 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
 
                     data_values, use_dictionary_data = decode_data(
                         npbuffer,
-                        translate_encoding(schema, False, page_header.data_page_header.encoding),
+                        translate_encoding(schema, False, encoding),
                         data_value_count,
-                        read_length=False,
                         schema_element=schema[name],
                     )
 
