@@ -10,4 +10,4 @@ except PackageNotFoundError:
     pass
 
 from .schema import NumparquetSchema
-from .numparquet import read_numparquet, read_schema
+from .reader import read_numparquet, read_schema
