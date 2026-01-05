@@ -29,11 +29,11 @@ def test_basic_dtypes_small_few(
 
     arr = np.zeros(10_000, dtype=dtype)
     if dtype == np.bool_:
-        arr[0: 1_000] = True
-        arr[9_000: 10_000] = True
+        arr[1_000: 2_000] = True
+        arr[8_000: 9_000] = True
     else:
-        arr[0: 1_000] = 1
-        arr[9_000: 10_000] = 1
+        arr[1_000: 2_000] = 1
+        arr[8_000: 9_000] = 1
 
     data = {"a": arr}
 

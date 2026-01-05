@@ -172,7 +172,7 @@ def decode_bitpacked(npbuffer, header, width, boolean=False):
     return _decode_bitpacked(raw_bytes, width, count, boolean=boolean)
 
 
-def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length):
+def decode_rle_bit_packed_hybrid(npbuffer, width, values, length):
     """Decode RLE/Bit-Packed Hybrid.
 
     Parameters
@@ -183,8 +183,6 @@ def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length):
         Bit width of the packed data.
     values : `np.ndarray`
         Array of output values.
-    index : `int`
-        Index of output values to start filling.
     length : `int`
         Length of the data in the buffer.
 
@@ -203,15 +201,15 @@ def decode_rle_bit_packed_hybrid(npbuffer, width, values, index, length):
         header = decode_uleb128(npbuffer)
         if header & 1 == 0:
             count, value = decode_rle(npbuffer, header, width)
-            values[index + n_read: index + n_read + count] = value
+            values[n_read: n_read + count] = value
             n_read += count
         else:
             bitpacked_values = decode_bitpacked(npbuffer, header, width)
             stop_index = len(bitpacked_values)
-            if (index + n_read + stop_index) > len(values):
-                stop_index = len(values) - (index + int(n_read))
+            if (n_read + stop_index) > len(values):
+                stop_index = len(values) - int(n_read)
 
-            values[index + n_read: index + n_read + stop_index] = bitpacked_values[0: stop_index]
+            values[n_read: n_read + stop_index] = bitpacked_values[0: stop_index]
 
             n_read += len(bitpacked_values)
 
@@ -329,12 +327,9 @@ def decode_data(
             if length is None:
                 length = npbuffer.read(1, np.int32)[0]
 
-        index = 0
         values = np.zeros(num_values, dtype=np.int32)
+        decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, length)
 
-        while index < num_values:
-            n_read = decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, index, length)
-            index += n_read
     elif encoding == parquet_thrift.Encoding.BYTE_STREAM_SPLIT:
         values = decode_byte_stream_split(npbuffer, num_values, schema_element.native_dtype)
     else:
