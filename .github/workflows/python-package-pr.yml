@@ -17,14 +17,10 @@ jobs:
         os: [ ubuntu-latest ]
         python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
         include:
-          # This gives us arm64
           - os: macos-latest
             python-version: "3.13"
-          # This gives us x86
-          - os: macos-13
+          - os: windows-latest
             python-version: "3.13"
-          # - os: windows-latest
-          #   python-version: "3.11"
 
     steps:
     - uses: actions/checkout@v6
