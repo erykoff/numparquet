@@ -11,6 +11,15 @@ from thriftpy2.protocol.compact import TCompactProtocolFactory
 
 PARQUET_MARKER = b"PAR1"
 
+# TODO:
+#  * nulls
+#  * byte split encoding
+#  * dictionary encoding
+#  * auto encoding
+#  * simple converted types
+#  * strings
+#  * lists
+
 
 class NumparquetWriter:
     """docstring."""
@@ -56,7 +65,7 @@ class NumparquetWriter:
         """
         """
 
-        self._check_data(data)
+        n_rows = self._check_data(data)
 
         if not self._initialized:
             self._file_metadata.schema = parquet_schema_from_numpy_dict(data)
@@ -66,11 +75,18 @@ class NumparquetWriter:
         else:
             raise NotImplementedError("Append!")
 
-        # Split into row groups!
         self._check_row_group_data = False
 
-        # TODO: split
-        self.write_row_group(data)
+        n_row_groups = 1 + n_rows // row_group_size
+        index = 0
+        for row_group_index in range(n_row_groups):
+            start = index
+            stop = n_rows if row_group_index == (n_row_groups - 1) else index + row_group_size
+
+            row_group_data = {name: arr[start: stop] for name, arr in data.items()}
+            self.write_row_group(row_group_data)
+
+            index = stop
 
         self._check_row_group_data = True
 
@@ -89,7 +105,7 @@ class NumparquetWriter:
         for name, arr in row_group_data.items():
             row_group.num_rows = len(arr)
 
-            column_chunk = self._write_column_chunk(name, arr)
+            column_chunk = self._write_column_chunk(self._schema[name], arr)
             row_group.total_byte_size += column_chunk.meta_data.total_uncompressed_size
             row_group.total_compressed_size += column_chunk.meta_data.total_compressed_size
 
@@ -127,9 +143,14 @@ class NumparquetWriter:
             elif len(arr) != n_rows:
                 raise ValueError(f"Data column {name} does not have the same length as others!")
 
+        if n_rows is None:
+            raise ValueError("No data supplied!")
+
         # And check the same types if we are appending!
         if self._initialized:
             raise NotImplementedError("Need to check types!")
+
+        return n_rows
 
     def _write_footer(self):
         """
@@ -150,7 +171,7 @@ class NumparquetWriter:
     def __exit__(self, *args, **kwargs):
         self.close()
 
-    def _write_column_chunk(self, name, array):
+    def _write_column_chunk(self, schema_element, array):
         """
         """
         column_chunk = parquet_thrift.ColumnChunk()
@@ -163,14 +184,14 @@ class NumparquetWriter:
         column_metadata.total_uncompressed_size = 0
         column_metadata.total_compressed_size = 0
         # column_metadata.type = schema_element.type
-        column_metadata.type = self._schema[name].parquet_type
+        column_metadata.type = schema_element.parquet_type
         # TODO: Add support for dictionary and other encodings and lists.
         column_metadata.encodings = [
             parquet_thrift.Encoding.RLE,
             parquet_thrift.Encoding.PLAIN,
         ]
         # TODO: figure out for lists
-        column_metadata.path_in_schema = [name]
+        column_metadata.path_in_schema = schema_element.path_in_schema
         column_metadata.codec = self._codec
         column_metadata.num_values = len(array)
         column_metadata.data_page_offset = self._file_buffer.tell()
@@ -179,17 +200,23 @@ class NumparquetWriter:
 
         data_size_bytes = array.itemsize * len(array)
         n_pages = 1 + data_size_bytes // (self._data_page_size * 1024)
-        n_page_rows = len(array) // n_pages
+        page_size = len(array) // n_pages
 
         index = 0
         for page_index in range(n_pages):
             start = index
-            stop = len(array) if page_index == (n_pages - 1) else index + n_page_rows
+            stop = len(array) if page_index == (n_pages - 1) else index + page_size
 
-            uncompressed_size, compressed_size = self._write_data_page(array[start: stop], encoding)
+            uncompressed_size, compressed_size = self._write_data_page(
+                schema_element,
+                array[start: stop],
+                encoding,
+            )
 
             column_metadata.total_uncompressed_size += uncompressed_size
             column_metadata.total_compressed_size += compressed_size
+
+            index = stop
 
         # Column chunk statistics.
         column_metadata.statistics = self._compute_statistics(array)
@@ -197,23 +224,48 @@ class NumparquetWriter:
 
         return column_chunk
 
-    def _write_data_page(self, sub_array, encoding):
+    def _write_data_page(self, schema_element, sub_array, encoding):
         """
         """
+        # The prepend buffer is for data_page_version == 2, where some data
+        # are uncompressed.
+        prepend_buffer = bytearray()
+        # The page_buffer is for all the to-be-compressed data.
         page_buffer = bytearray()
 
         page_header = parquet_thrift.PageHeader()
-        page_header.type = parquet_thrift.PageType.DATA_PAGE
 
-        # TODO: support v2
-        data_page_header = parquet_thrift.DataPageHeader()
-        data_page_header.num_values = len(sub_array)
-        data_page_header.encoding = encoding
-        data_page_header.definition_level_encoding = parquet_thrift.Encoding.RLE
-        data_page_header.repetition_level_encoding = parquet_thrift.Encoding.RLE
+        header_v2 = False
+        prepended_length = 0
+        if self._data_page_version == 1:
+            page_header.type = parquet_thrift.PageType.DATA_PAGE
+
+            data_page_header = parquet_thrift.DataPageHeader()
+            data_page_header.num_values = len(sub_array)
+            data_page_header.encoding = encoding
+            data_page_header.definition_level_encoding = parquet_thrift.Encoding.RLE
+            write_definition_level_length = True
+            data_page_header.repetition_level_encoding = parquet_thrift.Encoding.RLE
+            write_repetition_level_length = True
+
+        elif self._data_page_version == 2:
+            header_v2 = True
+            page_header.type = parquet_thrift.PageType.DATA_PAGE_V2
+
+            data_page_header = parquet_thrift.DataPageHeaderV2()
+            # num_values is the number of values, including NULLs.
+            data_page_header.num_values = len(sub_array)
+            # num_rows is the number of rows in the data page.
+            data_page_header.num_rows = len(sub_array)
+            data_page_header.num_nulls = 0
+            data_page_header.encoding = encoding
+            data_page_header.repetition_levels_byte_length = 0
+            data_page_header.definition_levels_byte_length = 0
+
+            data_page_header.is_compressed = (self._codec != parquet_thrift.CompressionCodec.UNCOMPRESSED)
 
         # 1. Store repeatability in page_buffer.
-        #      There is no repeatability.
+        #      There is no repeatability (yet).
 
         # 2. Store definitions in page_buffer.
 
@@ -228,34 +280,48 @@ class NumparquetWriter:
         rle = np.frombuffer(temp, dtype="S1")[0]
         rle_length = np.array([len(header_encoded) + len(rle)], dtype=np.int32)
 
-        page_buffer.extend(rle_length)
-        page_buffer.extend(header_encoded)
-        page_buffer.extend(rle)
+        if header_v2:
+            # Write the length to the header, and put the definition
+            # data in the prepend_buffer which will not be compressed.
+            data_page_header.definition_levels_byte_length = rle_length[0]
+            prepend_buffer.extend(header_encoded)
+            prepend_buffer.extend(rle)
+        else:
+            # Write the length and the definition data to the page_buffer,
+            # which will be compressed.
+            page_buffer.extend(rle_length)
+            page_buffer.extend(header_encoded)
+            page_buffer.extend(rle)
 
         # 3. Store values in page_buffer.
         #    TODO: make an encode thing here.
         page_buffer.extend(encode_plain(sub_array))
 
         # 4. Record uncompressed size.
-        page_header.uncompressed_page_size = len(page_buffer)
+        page_header.uncompressed_page_size = len(page_buffer) + len(prepend_buffer)
 
         # 5. Compress!
         page_buffer_compressed = compress(self._codec, page_buffer)
 
         # 6. Record compressed size.
-        page_header.compressed_page_size = len(page_buffer_compressed)
+        page_header.compressed_page_size = len(page_buffer_compressed) + len(prepend_buffer)
 
         # 7. Add page stats.
         data_page_header.statistics = self._compute_statistics(sub_array)
 
         # 8. Write the header to the file.
-        page_header.data_page_header = data_page_header
+        if header_v2:
+            page_header.data_page_header_v2 = data_page_header
+        else:
+            page_header.data_page_header = data_page_header
         page_header_ser = serialize(page_header, proto_factory=TCompactProtocolFactory())
         self._file_buffer.write(page_header_ser)
+        if header_v2:
+            self._file_buffer.write(prepend_buffer)
         self._file_buffer.write(page_buffer_compressed)
 
-        page_uncompressed_size = len(page_header_ser) + len(page_buffer)
-        page_compressed_size = len(page_header_ser) + len(page_buffer_compressed)
+        page_uncompressed_size = len(page_header_ser) + len(prepend_buffer) + len(page_buffer)
+        page_compressed_size = len(page_header_ser) + len(prepend_buffer) + len(page_buffer_compressed)
 
         return page_uncompressed_size, page_compressed_size
 
