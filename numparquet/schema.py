@@ -37,8 +37,8 @@ class NumparquetSchemaElement:
 
         self._name = name_element.name
         self._path_in_schema = [element.name for element in schema_elements]
-        # self._required = (name_element.repetition_type == parquet_thrift.FieldRepetitionType.REQUIRED)
         self._is_byte_array = False
+        self._parquet_type = dtype_element.type
 
         native_dtype = None
         if dtype_element.type == parquet_thrift.Type.BOOLEAN:
@@ -175,6 +175,10 @@ class NumparquetSchemaElement:
         return self._dtype
 
     @property
+    def parquet_type(self):
+        return self._parquet_type
+
+    @property
     def dtype_name(self):
         if self._dtype == "S1":
             return "bytes"
@@ -293,16 +297,18 @@ class NumparquetSchema:
                 # Note: for LIST this is the first element;
                 # for nested I don't know.
                 name = self.get_element_from_path(md.path_in_schema).name
-                self._null_count[name] += md.statistics.null_count
+                if md.statistics is not None:
+                    self._null_count[name] += md.statistics.null_count
 
         # Load metadata.
         self._metadata = {}
         self._arrow_schema_encoded = None
-        for kv in file_metadata.key_value_metadata:
-            if kv.key == "ARROW:schema":
-                self._arrow_schema_encoded = kv.value
-            else:
-                self._metadata[kv.key] = kv.value
+        if file_metadata.key_value_metadata is not None:
+            for kv in file_metadata.key_value_metadata:
+                if kv.key == "ARROW:schema":
+                    self._arrow_schema_encoded = kv.value
+                else:
+                    self._metadata[kv.key] = kv.value
 
     @property
     def columns(self):
@@ -348,3 +354,37 @@ class NumparquetSchema:
                 lines.append(line)
 
         return "\n".join(lines)
+
+
+def parquet_schema_from_numpy_dict(data):
+    """
+    """
+    schema_elements = []
+
+    # This is the parent schema element.
+    schema_parent = parquet_thrift.SchemaElement()
+    schema_parent.name = "schema"
+    schema_parent.repetition_type = parquet_thrift.FieldRepetitionType.REQUIRED
+    schema_parent.num_children = len(data)
+    schema_elements.append(schema_parent)
+
+    for name, arr in data.items():
+        element = parquet_thrift.SchemaElement()
+        element.name = name
+        element.repetition_type = parquet_thrift.FieldRepetitionType.OPTIONAL
+
+        # Basic types; add support for converted/logical/etc.
+        if arr.dtype == np.bool_:
+            element.type = 0
+        elif arr.dtype == np.int32:
+            element.type = 1
+        elif arr.dtype == np.int64:
+            element.type = 2
+        if arr.dtype == np.float32:
+            element.type = 4
+        elif arr.dtype == np.float64:
+            element.type = 5
+
+        schema_elements.append(element)
+
+    return schema_elements
