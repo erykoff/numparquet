@@ -3,7 +3,7 @@ import numpy as np
 from .thrift import check_valid_parquet, read_md_length, read_file_metadata, read_page_header, parquet_thrift
 from .schema import NumparquetSchema
 from .compression import decompress_into
-from .encoding import NumpyBuffer, decode_data
+from .decoding import NumpyBuffer, decode_data
 from .utilities import (
     make_empty_column,
     update_byte_array_column,
@@ -15,7 +15,6 @@ from .utilities import (
 
 # TODO:
 #  * Investigate optimizations of string decoding.
-#  * data page v2 support
 #  * variable length lists?
 
 def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=False):
@@ -62,8 +61,8 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
         for row_group in file_metadata.row_groups:
             row_group_rows = row_group.num_rows
 
-            for col_group in row_group.columns:
-                col_metadata = col_group.meta_data
+            for column_chunk in row_group.columns:
+                col_metadata = column_chunk.meta_data
                 codec = col_metadata.codec
                 schema_element = schema.get_element_from_path(col_metadata.path_in_schema)
                 name = schema_element.name
@@ -87,8 +86,8 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                 dict_values = None
 
                 # Loop until we have read all the data.
-                col_group_index = 0
-                while col_group_index < col_metadata.num_values:
+                column_chunk_index = 0
+                while column_chunk_index < col_metadata.num_values:
                     if read_dictionary_data:
                         # Note that only the first page can be a dictionary
                         # page; we will have to reset this at the end of the
@@ -234,7 +233,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                             read_dictionary_data,
                             dict_values,
                             data_values,
-                            row_group_index + col_group_index,
+                            row_group_index + column_chunk_index,
                         )
 
                     # Make this a utility?
@@ -245,26 +244,26 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                         )
                     else:
                         rgslice = slice(row_group_index, row_group_index + row_group_rows)
-                    cgslice = slice(col_group_index, col_group_index + num_values_in_page)
+                    ccslice = slice(column_chunk_index, column_chunk_index + num_values_in_page)
                     if use_dictionary_data:
                         if schema[name].nullable and (null_count > 0):
                             non_null = (definition_values > 0)
-                            data_dict[name][rgslice][cgslice][non_null] = dict_values[data_values]
-                            data_dict[name][rgslice][cgslice][~non_null] = schema[name].null_value
-                            data_dict[name].mask[rgslice][cgslice][~non_null] = True
+                            data_dict[name][rgslice][ccslice][non_null] = dict_values[data_values]
+                            data_dict[name][rgslice][ccslice][~non_null] = schema[name].null_value
+                            data_dict[name].mask[rgslice][ccslice][~non_null] = True
                         else:
-                            data_dict[name][rgslice][cgslice] = dict_values[data_values]
+                            data_dict[name][rgslice][ccslice] = dict_values[data_values]
                     else:
                         if schema[name].nullable and (null_count > 0):
                             non_null = (definition_values > 0)
-                            data_dict[name][rgslice][cgslice][non_null] = data_values
-                            data_dict[name][rgslice][cgslice][~non_null] = schema[name].null_value
-                            data_dict[name].mask[rgslice][cgslice][~non_null] = True
+                            data_dict[name][rgslice][ccslice][non_null] = data_values
+                            data_dict[name][rgslice][ccslice][~non_null] = schema[name].null_value
+                            data_dict[name].mask[rgslice][ccslice][~non_null] = True
                         else:
-                            data_dict[name][rgslice][cgslice] = data_values
+                            data_dict[name][rgslice][ccslice] = data_values
 
                     # Increment the counter of number of rows read.
-                    col_group_index += num_values_in_page
+                    column_chunk_index += num_values_in_page
                     # Subsequent pages will not have dictionary data.
                     read_dictionary_data = False
 
