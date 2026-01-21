@@ -1,11 +1,16 @@
+import numpy as np
 import os
 import thriftpy2 as thriftpy
+from thriftpy2.utils import serialize
 from thriftpy2.protocol.compact import TCompactProtocolFactory
 from thriftpy2.http import TFileObjectTransport
 
 
 thriftfile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "parquet.thrift")
 parquet_thrift = thriftpy.load(thriftfile, module_name="parquet_thrift")
+
+
+PARQUET_MARKER = b"PAR1"
 
 
 def check_valid_parquet(file_buffer):
@@ -18,12 +23,12 @@ def check_valid_parquet(file_buffer):
     file_buffer.seek(0)
 
     first = file_buffer.read(4)
-    if first != b"PAR1":
+    if first != PARQUET_MARKER:
         return False
 
     file_buffer.seek(-4, 2)
     last = file_buffer.read(4)
-    if last != b"PAR1":
+    if last != PARQUET_MARKER:
         return False
 
     return True
@@ -84,3 +89,21 @@ def read_page_header(file_buffer):
     page_header.read(pin)
 
     return page_header
+
+
+def write_marker(file_buffer):
+    """
+    """
+    file_buffer.write(PARQUET_MARKER)
+
+
+def write_file_metadata(file_buffer, file_metadata):
+    """docstring"""
+    file_metadata_ser = serialize(file_metadata, proto_factory=TCompactProtocolFactory())
+    file_buffer.write(file_metadata_ser)
+
+    # We need to serialize the size of the file metadata as
+    # a 4 byte int, little endian.
+    sz = np.asarray([len(file_metadata_ser)], dtype=np.int32)
+    file_buffer.write(sz)
+    write_marker(file_buffer)
