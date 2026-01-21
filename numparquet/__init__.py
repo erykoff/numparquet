@@ -11,3 +11,4 @@ except PackageNotFoundError:
 
 from .schema import NumparquetSchema
 from .reader import read_numparquet, read_schema
+from .writer import NumparquetWriter, write_numparquet
