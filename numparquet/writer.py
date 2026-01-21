@@ -236,7 +236,6 @@ class NumparquetWriter:
         page_header = parquet_thrift.PageHeader()
 
         header_v2 = False
-        prepended_length = 0
         if self._data_page_version == 1:
             page_header.type = parquet_thrift.PageType.DATA_PAGE
 
@@ -244,9 +243,7 @@ class NumparquetWriter:
             data_page_header.num_values = len(sub_array)
             data_page_header.encoding = encoding
             data_page_header.definition_level_encoding = parquet_thrift.Encoding.RLE
-            write_definition_level_length = True
             data_page_header.repetition_level_encoding = parquet_thrift.Encoding.RLE
-            write_repetition_level_length = True
 
         elif self._data_page_version == 2:
             header_v2 = True
