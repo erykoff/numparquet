@@ -10,7 +10,7 @@ class NumpyBuffer:
     Parameters
     ----------
     buffer : `np.ndarray`
-        Numpy byte array with dtype "S1".
+        Numpy byte array with dtype np.uint8.
     """
     def __init__(self, buffer):
         self._buffer = buffer
@@ -19,7 +19,7 @@ class NumpyBuffer:
 
         # Note: check for overruns
 
-    def read(self, count=-1, dtype=np.dtype("S1")):
+    def read(self, count=-1, dtype=np.uint8):
         """Read bytes from the buffer and increment the index.
 
         This returns a no-copy view to the underlying buffer.
@@ -44,7 +44,7 @@ class NumpyBuffer:
         if count == -1:
             count = (self._size - self._index) // itemsize
 
-        if dt == np.dtype("S1"):
+        if dt == np.uint8:
             nbytes = count
             res = self._buffer[self._index: self._index + nbytes]
         else:
@@ -62,10 +62,10 @@ class NumpyBuffer:
         Parameters
         ----------
         out : `np.ndarray`
-            Output buffer, byte type "S1".  Number of bytes read will equal
+            Output buffer, byte type np.uint8.  Number of bytes read will equal
             length of the buffer.
         """
-        out_bytes = np.frombuffer(out.data, dtype="S1")
+        out_bytes = np.frombuffer(out.data, dtype=np.uint8)
         out_bytes[:] = self._buffer[self._index: self._index + out.nbytes]
         self._index += out.nbytes
 
@@ -134,6 +134,7 @@ def decode_rle(npbuffer, header, bit_width):
 
     data = np.zeros(4, dtype=np.uint8)
     npbuffer.readinto(data[0: width])
+    # This is wrong; I think 64 bit?  Not sure ...
     value = data.astype(np.int32)[0]
 
     return count, value
@@ -300,11 +301,11 @@ def decode_data(
             values = []
             for index in range(num_values):
                 length = npbuffer.read(count=1, dtype=np.int32)[0]
-                val = npbuffer.read(count=length, dtype="S1").tobytes()
+                val = bytearray(npbuffer.read(count=length, dtype=np.uint8).data)
                 if convert_unicode:
                     values.append(val.decode("UTF-8"))
                 else:
-                    values.append(val)
+                    values.append(bytes(val))
 
             values = np.asarray(values)
         elif schema_element.dtype == np.bool_:

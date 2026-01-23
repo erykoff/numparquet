@@ -94,10 +94,10 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                         # loop.
 
                         page_header = read_page_header(file_buffer)
-                        read_buffer = np.empty(page_header.compressed_page_size, dtype="S1")
+                        read_buffer = np.empty(page_header.compressed_page_size, dtype=np.uint8)
                         file_buffer.readinto(read_buffer)
 
-                        dict_value_buffer = np.empty(page_header.uncompressed_page_size, dtype="S1")
+                        dict_value_buffer = np.empty(page_header.uncompressed_page_size, dtype=np.uint8)
                         decompress_into(codec, read_buffer, dict_value_buffer)
 
                         dict_npbuffer = NumpyBuffer(dict_value_buffer)
@@ -112,9 +112,9 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                     # Read the data page and uncompress it.
                     page_header = read_page_header(file_buffer)
 
-                    read_buffer = np.empty(page_header.compressed_page_size, dtype="S1")
+                    read_buffer = np.empty(page_header.compressed_page_size, dtype=np.uint8)
                     file_buffer.readinto(read_buffer)
-                    data_page_buffer = np.empty(page_header.uncompressed_page_size, dtype="S1")
+                    data_page_buffer = np.empty(page_header.uncompressed_page_size, dtype=np.uint8)
 
                     has_v1_header = page_header.data_page_header is not None
                     if has_v1_header:
@@ -213,6 +213,13 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                     # Make empty column if necessary
                     if name not in data_dict:
                         if is_byte_array:
+                            # Okay, so this is wrong.
+                            # The byte array could be anything, not necessarily
+                            # aligned.  It's not necessarily unencoded string.
+                            # So that's wrong.
+                            # Should be an object array.
+                            # But the string array, also with the converted type
+                            # should be a fixed length string array.
                             if read_dictionary_data:
                                 byte_array_dtype = dict_values.dtype
                             else:
