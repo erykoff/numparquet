@@ -39,6 +39,8 @@ PyDoc_STRVAR(decode_bitpacked_doc,
              "    Bit width.\n"
              "count : `int`\n"
              "    Number of values to unpack.\n"
+             "boolean : `bool`, optional\n"
+             "    Return boolean array if width is 1?\n"
              "\n"
              "Returns\n"
              "-------\n"
@@ -55,7 +57,7 @@ static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
     int count;
     static char *kwlist[] = {"raw_bytes", "width", "count", "boolean", NULL};
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Oiip", kwlist, &raw_bytes_obj, &width, &count, &boolean))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "Oii|p", kwlist, &raw_bytes_obj, &width, &count, &boolean))
         goto fail;
 
     raw_bytes_arr = PyArray_FROM_OTF(raw_bytes_obj, NPY_UINT8, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSUREARRAY);
@@ -66,13 +68,29 @@ static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
     dims[0] = (npy_intp)count;
 
     void *value_data;
+    int npy_type;
     if (boolean) {
-        value_arr = PyArray_SimpleNew(1, dims, NPY_BOOL);
-        if (value_arr == NULL) goto fail;
+        if (width != 1) {
+            PyErr_SetString(PyExc_ValueError,
+                            "boolean can only be True if width == 1.");
+            goto fail;
+        }
+        npy_type = NPY_BOOL;
     } else {
-        value_arr = PyArray_SimpleNew(1, dims, NPY_INT32);
-        if (value_arr == NULL) goto fail;
+        if (width <= 8) {
+            npy_type = NPY_UINT8;
+        } else if (width <= 16) {
+            npy_type = NPY_UINT16;
+        } else if (width <= 32) {
+            npy_type = NPY_UINT32;
+        } else if (width <= 64) {
+            npy_type = NPY_UINT64;
+        } else {
+            PyErr_SetString(PyExc_ValueError,
+                            "width must not be greater than 64.");
+        }
     }
+    value_arr = PyArray_SimpleNew(1, dims, npy_type);
     value_data = (void *)PyArray_DATA((PyArrayObject *)value_arr);
 
     npy_intp raw_bytes_size = PyArray_SIZE((PyArrayObject *)raw_bytes_arr);
@@ -91,10 +109,14 @@ static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
             bits_wnd_l -= 8;
             data >>= 8;
         } else if ((bits_wnd_l - bits_wnd_r) >= width) {
-            if (boolean) {
+            if (width <= 8) {
                 ((uint8_t *)value_data)[index] = (uint8_t) ((data >> bits_wnd_r) & mask);
+            } else if (width <= 16) {
+                ((uint16_t *)value_data)[index] = (uint16_t) ((data >> bits_wnd_r) & mask);
+            } else if (width <= 32) {
+                ((uint32_t *)value_data)[index] = (uint32_t) ((data >> bits_wnd_r) & mask);
             } else {
-                ((int32_t *)value_data)[index] = (int32_t) ((data >> bits_wnd_r) & mask);
+                ((uint64_t *)value_data)[index] = (uint64_t) ((data >> bits_wnd_r) & mask);
             }
             index++;
             total -= width;
