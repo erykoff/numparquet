@@ -126,16 +126,31 @@ def decode_rle(npbuffer, header, bit_width):
     -------
     count : `int`
         Repeat count.
-    value : `np.int32`
-        Value to be repeated.
+    value : `np.uint8` or `np.uint16` or `np.uint32` or `np.uint64`
+        Value to be repeated. Data type depends on width.
     """
     count = header >> 1
-    width = (bit_width + 7) // 8
+    byte_width = (bit_width + 7) // 8
 
-    data = np.zeros(4, dtype=np.uint8)
-    npbuffer.readinto(data[0: width])
-    # This is wrong; I think 64 bit?  Not sure ...
-    value = data.astype(np.int32)[0]
+    data = np.zeros(8, dtype=np.uint8)
+    npbuffer.readinto(data[0: byte_width])
+
+    if bit_width == 1:
+        # Special case 1-bit because of possible
+        # undefined behavior according to arrow.
+        value = np.uint8(data[0] & 1)
+    else:
+        if byte_width == 1:
+            dtype = ">u1"
+        elif byte_width == 2:
+            dtype = ">u2"
+        elif byte_width <= 4:
+            dtype = ">u4"
+        else:
+            dtype = ">u8"
+
+        value_buffer = np.frombuffer(data.data, dtype=dtype)
+        value = value_buffer[0]
 
     return count, value
 
