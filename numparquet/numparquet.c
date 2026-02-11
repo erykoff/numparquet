@@ -26,6 +26,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define ERR_SIZE 256
+
 
 PyDoc_STRVAR(decode_bitpacked_doc,
              "decode_bitpacked(raw_bytes, bit_width, count, boolean=False)\n"
@@ -169,7 +171,7 @@ static size_t compute_buffer_size_bytes(int bit_width, int n_values) {
 }
 
 
-static size_t get_value_width_internal(PyObject *values_arr) {
+static size_t get_value_width_internal(PyObject *values_arr, char *err) {
     int value_type;
 
     value_type = PyArray_TYPE((PyArrayObject *)values_arr);
@@ -182,13 +184,13 @@ static size_t get_value_width_internal(PyObject *values_arr) {
     } else if ((value_type == NPY_UINT64) || (value_type == NPY_INT64)) {
         return 8;
     } else {
-        PyErr_SetString(PyExc_ValueError, "Can only pack integer or boolean types.");
+        snprintf(err, ERR_SIZE, "Can only pack integer or boolean types.");
         return 0;
     }
 }
 
 
-static int bitpack_values_internal(void *values, size_t n_values, size_t value_width, int bit_width, numparquet_buffer *buffer) {
+static int bitpack_values_internal(void *values, size_t n_values, size_t value_width, int bit_width, numparquet_buffer *buffer, char *err) {
     int i, byte_offset, bit_offset, num_bytes;
     uint64_t v;
 
@@ -201,7 +203,7 @@ static int bitpack_values_internal(void *values, size_t n_values, size_t value_w
     byte_offset = 0;
 
     if ((buffer->index + 8) > buffer->size) {
-        PyErr_SetString(PyExc_RuntimeError, "Bitpack buffer ran out of space.");
+        snprintf(err, ERR_SIZE, "Bitpack buffer ran out of space.");
         return -1;
     }
 
@@ -229,7 +231,7 @@ static int bitpack_values_internal(void *values, size_t n_values, size_t value_w
                 buffered_values[0] = (v >> (bit_width - bit_offset));
             }
             if ((buffer->index + byte_offset + 8) > buffer->size) {
-                PyErr_SetString(PyExc_RuntimeError, "Buffer ran out of space in bitpack_values_internal");
+                snprintf(err, ERR_SIZE, "Buffer ran out of space in bitpack_values_internal");
                 goto fail;
             }
         }
@@ -282,6 +284,7 @@ static PyObject *encode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
     void *values_buffer;
     size_t value_width;
     numparquet_buffer output_buffer;
+    char err[ERR_SIZE];
 
     static char *kwlist[] = {"values", "bit_width", NULL};
 
@@ -302,10 +305,14 @@ static PyObject *encode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
     output_buffer.index = 0;
     values_buffer = (void *) PyArray_DATA((PyArrayObject *)values_arr);
 
-    value_width = get_value_width_internal(values_arr);
-    if (value_width == 0) goto fail;
+    value_width = get_value_width_internal(values_arr, err);
+    if (value_width == 0) {
+        PyErr_SetString(PyExc_ValueError, err);
+        goto fail;
+    }
 
-    if (bitpack_values_internal(values_buffer, n_values, value_width, bit_width, &output_buffer) < 0) {
+    if (bitpack_values_internal(values_buffer, n_values, value_width, bit_width, &output_buffer, err) < 0) {
+        PyErr_SetString(PyExc_RuntimeError, err);
         goto fail;
     }
 
@@ -365,17 +372,17 @@ static int encode_uleb128_internal(uint64_t value, numparquet_buffer *buffer) {
 }
 
 
-static int store_repeated_run_internal(numparquet_rle_packer *packer) {
+static int store_repeated_run_internal(numparquet_rle_packer *packer, char *err) {
     uint64_t header;
 
     header = packer->repeat_count << 1;
     if (encode_uleb128_internal(header, &packer->buffer) < 0) {
-        PyErr_SetString(PyExc_RuntimeError, "Buffer ran out of space encoding uleb128");
+        snprintf(err, ERR_SIZE, "Buffer ran out of space encoding uleb128");
         return -1;
     }
 
     if ((packer->buffer.index + packer->byte_width) > packer->buffer.size) {
-        PyErr_SetString(PyExc_RuntimeError, "Buffer ran out of space for repeated run.");
+        snprintf(err, ERR_SIZE, "Buffer ran out of space for repeated run.");
         return -1;
     }
 
@@ -389,13 +396,13 @@ static int store_repeated_run_internal(numparquet_rle_packer *packer) {
 }
 
 
-static int store_literal_run_internal(numparquet_rle_packer *packer, bool done) {
+static int store_literal_run_internal(numparquet_rle_packer *packer, bool done, char *err) {
     int32_t num_groups;
     uint8_t indicator_value;
 
     if (packer->literal_marker == NULL) {
         if ((packer->buffer.index + 1) == packer->buffer.size) {
-            PyErr_SetString(PyExc_RuntimeError, "Buffer ran out of space for literal run.");
+            snprintf(err, ERR_SIZE, "Buffer ran out of space for literal run.");
             return -1;
         }
         packer->literal_marker = packer->buffer.buffer + packer->buffer.index;
@@ -404,7 +411,7 @@ static int store_literal_run_internal(numparquet_rle_packer *packer, bool done) 
 
     if (packer->num_buffered_values > 0) {
         // Our buffer is always 64-bit.
-        if (bitpack_values_internal(packer->buffered_values, packer->num_buffered_values, sizeof(uint64_t), packer->bit_width, &packer->buffer) < 0) return -1;
+        if (bitpack_values_internal(packer->buffered_values, packer->num_buffered_values, sizeof(uint64_t), packer->bit_width, &packer->buffer, err) < 0) return -1;
     }
     packer->num_buffered_values = 0;
 
@@ -419,7 +426,7 @@ static int store_literal_run_internal(numparquet_rle_packer *packer, bool done) 
 }
 
 
-static int store_buffered_values_internal(numparquet_rle_packer *packer, bool done) {
+static int store_buffered_values_internal(numparquet_rle_packer *packer, bool done, char *err) {
     int32_t num_groups;
 
     if (packer->repeat_count >= 8) {
@@ -428,7 +435,7 @@ static int store_buffered_values_internal(numparquet_rle_packer *packer, bool do
         packer->num_buffered_values = 0;
         if (packer->literal_count != 0) {
             // There was a literal run, so store it.
-            if (store_literal_run_internal(packer, true) < 0) {
+            if (store_literal_run_internal(packer, true, err) < 0) {
                 return -1;
             }
         }
@@ -440,11 +447,11 @@ static int store_buffered_values_internal(numparquet_rle_packer *packer, bool do
     if ((num_groups + 1) >= (1 << 6)) {
         // We need to start a new literal run because the header
         // byte we reserved cannot store any more.
-        if (store_literal_run_internal(packer, true) < 0) {
+        if (store_literal_run_internal(packer, true, err) < 0) {
             return -1;
         }
     } else {
-        if (store_literal_run_internal(packer, done) < 0) {
+        if (store_literal_run_internal(packer, done, err) < 0) {
             return -1;
         }
     }
@@ -489,6 +496,7 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
 
     void *values_buffer;
     int i;
+    char err[ERR_SIZE];
 
     static char *kwlist[] = {"values", "bit_width", NULL};
 
@@ -519,8 +527,11 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
     packer.buffer.size = dims[0];
     packer.bit_width = bit_width;
     packer.byte_width = (packer.bit_width >> 3) + ((packer.bit_width & 7) != 0);
-    packer.value_width = get_value_width_internal(values_arr);
-    if (packer.value_width == 0) goto fail;
+    packer.value_width = get_value_width_internal(values_arr, err);
+    if (packer.value_width == 0) {
+        PyErr_SetString(PyExc_ValueError, err);
+        goto fail;
+    }
 
     values_buffer = (void *) PyArray_DATA((PyArrayObject *)values_arr);
 
@@ -544,9 +555,8 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
             // First check if this is the end of a long run.
             if (packer.repeat_count >= 8) {
                 // End of a long run; store and reset.
-                if (store_repeated_run_internal(&packer) != 1) {
-                    PyErr_SetString(PyExc_RuntimeError,
-                            "failed to serialize.");
+                if (store_repeated_run_internal(&packer, err) < 0) {
+                    PyErr_SetString(PyExc_RuntimeError, err);
                     goto fail;
                 }
             }
@@ -556,7 +566,8 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
         }
         packer.buffered_values[packer.num_buffered_values++] = v;
         if (packer.num_buffered_values == 8) {
-            if (store_buffered_values_internal(&packer, false) < 0) {
+            if (store_buffered_values_internal(&packer, false, err) < 0) {
+                PyErr_SetString(PyExc_RuntimeError, err);
                 goto fail;
             }
         }
@@ -565,7 +576,8 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
         // We have to close out existing buffered data.
         bool all_repeat = ((packer.literal_count == 0) & ((packer.repeat_count == packer.num_buffered_values) | (packer.num_buffered_values == 0)));
         if ((packer.repeat_count > 0) & (all_repeat)) {
-            if (store_repeated_run_internal(&packer) < 0) {
+            if (store_repeated_run_internal(&packer, err) < 0) {
+                PyErr_SetString(PyExc_RuntimeError, err);
                 goto fail;
             }
         } else {
@@ -574,7 +586,8 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
                 packer.buffered_values[packer.num_buffered_values] = 0;
             }
             packer.literal_count += packer.num_buffered_values;
-            if (store_literal_run_internal(&packer, true) < 0) {
+            if (store_literal_run_internal(&packer, true, err) < 0) {
+                PyErr_SetString(PyExc_RuntimeError, err);
                 goto fail;
             }
             packer.repeat_count = 0;
