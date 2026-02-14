@@ -197,7 +197,10 @@ static int bitpack_values_internal(void *values, size_t n_values, size_t value_w
     uint64_t *buffered_values = NULL;
 
     buffered_values = (uint64_t *) calloc(1, sizeof(uint64_t));
-    if (buffered_values == NULL) goto fail;
+    if (buffered_values == NULL) {
+        snprintf(err, ERR_SIZE, "Could not allocate memory for bit-packing buffer.");
+        goto fail;
+    }
 
     bit_offset = 0;
     byte_offset = 0;
@@ -466,6 +469,7 @@ static int store_buffered_values_internal(numparquet_rle_packer *packer, bool do
             return -1;
         }
     }
+    packer->repeat_count = 0;
 
     return 0;
 }
@@ -506,8 +510,8 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
     uint64_t v;
 
     void *values_buffer;
-    int i;
     char err[ERR_SIZE];
+    int i;
 
     static char *kwlist[] = {"values", "bit_width", NULL};
 
@@ -707,10 +711,10 @@ static PyMethodDef numparquet_methods[] = {
      METH_VARARGS | METH_KEYWORDS, decode_bitpacked_doc},
     {"encode_bitpacked", (PyCFunction)(void (*)(void))encode_bitpacked,
      METH_VARARGS | METH_KEYWORDS, encode_bitpacked_doc},
-    {"encode_rle", (PyCFunction)(void (*)(void))encode_rle,
-     METH_VARARGS | METH_KEYWORDS, encode_rle_doc},
     {"encode_rle_bitpacked", (PyCFunction)(void (*)(void))encode_rle_bitpacked,
      METH_VARARGS | METH_KEYWORDS, encode_rle_bitpacked_doc},
+    {"encode_rle", (PyCFunction)(void (*)(void))encode_rle,
+     METH_VARARGS | METH_KEYWORDS, encode_rle_doc},
     {NULL, NULL, 0, NULL}};
 
 static struct PyModuleDef numparquet_module = {PyModuleDef_HEAD_INIT, "_numparquet", NULL, -1,
