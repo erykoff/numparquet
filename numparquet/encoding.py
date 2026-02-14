@@ -1,4 +1,5 @@
 import numpy as np
+from ._numparquet import encode_bitpacked, encode_rle, encode_rle_bitpacked  # noqa: F401
 
 
 def encode_uleb128(value):
@@ -29,7 +30,7 @@ def encode_uleb128(value):
         if value == 0:
             break
 
-    return np.frombuffer(byte_arr[0: index], dtype="S1")
+    return byte_arr[0: index]
 
 
 def encode_plain(array):
