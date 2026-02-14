@@ -345,7 +345,8 @@ typedef struct {
 
     int bit_width;
     int byte_width;
-    int repeat_count;
+    // The repeat count must fit in a signed 32-bit integer.
+    int32_t repeat_count;
     int literal_count;
     int num_buffered_values;
     void *literal_marker;
@@ -355,6 +356,7 @@ typedef struct {
 } numparquet_rle_packer;
 
 
+// See https://en.wikipedia.org/wiki/LEB128
 static int encode_uleb128_internal(uint64_t value, numparquet_buffer *buffer) {
     uint8_t byte;
 
@@ -374,6 +376,15 @@ static int encode_uleb128_internal(uint64_t value, numparquet_buffer *buffer) {
 
 static int store_repeated_run_internal(numparquet_rle_packer *packer, char *err) {
     uint64_t header;
+
+    /*
+      rle-run := <rle-header> <repeated-value>
+      rle-header := varint-encode( (rle-run-len) << 1)
+      rle-run-len := *see 3 below*
+      repeated-value := value that is repeated, using a fixed-width of round-up-to-next-byte(bit-width)
+      *2* varint-encode() is ULEB-128 encoding, see https://en.wikipedia.org/wiki/LEB128
+      *3* bit-packed-run-len and rle-run-len must be in the range [1, 2^31 - 1].
+    */
 
     header = packer->repeat_count << 1;
     if (encode_uleb128_internal(header, &packer->buffer) < 0) {
@@ -518,7 +529,6 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
     // The output buffer we set to be pessimistically the bit-packed size, plus
     // some extra which we will trim off at the end.
     dims[0] = (npy_intp) (bit_width * n_values + 100);
-    // output_arr = PyArray_SimpleNew(1, dims, NPY_UINT8);
     output_arr = PyArray_ZEROS(1, dims, NPY_UINT8, false);
     if (output_arr == NULL) goto fail;
 
@@ -616,12 +626,90 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
 }
 
 
+PyDoc_STRVAR(encode_rle_doc,
+             "encode_rle(value, count)\n"
+             "--\n\n"
+             "Encode a value count times with run-length-encoding and header.\n"
+             "\n"
+             "Parameters\n"
+             "----------\n"
+             "value : `int`\n"
+             "    Value to encode.\n"
+             "count : `int`\n"
+             "    Number of repeats.\n"
+             "bit_width : `int`\n"
+             "    Bit width to use to pack value.\n"
+             "\n"
+             "Returns\n"
+             "-------\n"
+             "rle_array : `np.ndarray`\n"
+             "    RLE array, of type np.uint8."
+             );
+
+static PyObject *encode_rle(PyObject *dummy, PyObject *args, PyObject *kwargs) {
+    PyObject *output_arr = NULL, *retval = NULL;
+    PyObject *slice = NULL;
+
+    npy_intp dims[1];
+
+    numparquet_rle_packer packer;
+
+    uint64_t value;
+    int32_t count;
+    int bit_width;
+    char err[ERR_SIZE];
+
+    static char *kwlist[] = {"value", "count", "bit_width", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "kii", kwlist, &value, &count, &bit_width))
+        goto fail;
+
+    // This buffer is more than large enough for a RLE encoding.
+    dims[0] = 100;
+    output_arr = PyArray_ZEROS(1, dims, NPY_UINT8, false);
+    if (output_arr == NULL) goto fail;
+
+    packer.repeat_count = count;
+    packer.current_value = value;
+    packer.buffer.buffer = (uint8_t *) PyArray_DATA((PyArrayObject *)output_arr);
+    packer.buffer.index = 0;
+    packer.buffer.size = dims[0];
+    packer.bit_width = bit_width;
+    packer.byte_width = (packer.bit_width >> 3) + ((packer.bit_width & 7) != 0);
+
+    if (store_repeated_run_internal(&packer, err) < 0) {
+        PyErr_SetString(PyExc_RuntimeError, err);
+        goto fail;
+    }
+
+    slice = PySlice_New(PyLong_FromLong(0), PyLong_FromLong(packer.buffer.index), PyLong_FromLong(1));
+    if (slice == NULL) goto fail;
+
+    retval = PyObject_GetItem((PyObject *)output_arr, slice);
+    if (retval == NULL) goto fail;
+
+    Py_DECREF(slice);
+    Py_DECREF(output_arr);
+
+    return PyArray_Return((PyArrayObject *)retval);
+
+ fail:
+    Py_XDECREF(output_arr);
+    Py_XDECREF(slice);
+    Py_XDECREF(retval);
+
+    return NULL;
+}
+
+
 static PyMethodDef numparquet_methods[] = {
     {"_decode_bitpacked", (PyCFunction)(void (*)(void))decode_bitpacked,
      METH_VARARGS | METH_KEYWORDS, decode_bitpacked_doc},
-    {"_encode_bitpacked", (PyCFunction)(void (*)(void))encode_bitpacked,
+    {"encode_bitpacked", (PyCFunction)(void (*)(void))encode_bitpacked,
      METH_VARARGS | METH_KEYWORDS, encode_bitpacked_doc},
-    {"_encode_rle_bitpacked", (PyCFunction)(void (*)(void))encode_rle_bitpacked,
+    {"encode_rle", (PyCFunction)(void (*)(void))encode_rle,
+     METH_VARARGS | METH_KEYWORDS, encode_rle_doc},
+    {"encode_rle_bitpacked", (PyCFunction)(void (*)(void))encode_rle_bitpacked,
      METH_VARARGS | METH_KEYWORDS, encode_rle_bitpacked_doc},
     {NULL, NULL, 0, NULL}};
 
