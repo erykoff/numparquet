@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 from .thrift import parquet_thrift, write_marker, write_file_metadata
-from .encoding import encode_uleb128, encode_plain
+from .encoding import encode_rle_bitpacked, encode_plain, encode_rle
 from .compression import compress, compression_string_map
 from .schema import NumparquetSchema, parquet_schema_from_numpy_dict
 from thriftpy2.utils import serialize
@@ -193,7 +193,11 @@ class NumparquetWriter:
         # TODO: figure out for lists
         column_metadata.path_in_schema = schema_element.path_in_schema
         column_metadata.codec = self._codec
-        column_metadata.num_values = len(array)
+        # TODO: accumulate from the data pages.
+        if isinstance(array, np.ma.MaskedArray):
+            column_metadata.num_values = int(np.sum(~array.mask))
+        else:
+            column_metadata.num_values = int(len(array))
         column_metadata.data_page_offset = self._file_buffer.tell()
         # TODO: Add support for dictionary.
         column_metadata.dictionary_page_offset = None
@@ -219,6 +223,7 @@ class NumparquetWriter:
             index = stop
 
         # Column chunk statistics.
+        # TODO: Accumulate from the data pages.
         column_metadata.statistics = self._compute_statistics(array)
         column_chunk.meta_data = column_metadata
 
@@ -227,6 +232,16 @@ class NumparquetWriter:
     def _write_data_page(self, schema_element, sub_array, encoding):
         """
         """
+
+        is_masked = False
+        n_nulls = 0
+        n_non_nulls = len(sub_array)
+        if isinstance(sub_array, np.ma.MaskedArray):
+            is_masked = True
+
+            n_nulls = np.sum(sub_array.mask)
+            n_non_nulls -= n_nulls
+
         # The prepend buffer is for data_page_version == 2, where some data
         # are uncompressed.
         prepend_buffer = bytearray()
@@ -240,7 +255,7 @@ class NumparquetWriter:
             page_header.type = parquet_thrift.PageType.DATA_PAGE
 
             data_page_header = parquet_thrift.DataPageHeader()
-            data_page_header.num_values = len(sub_array)
+            data_page_header.num_values = int(sub_array.size)
             data_page_header.encoding = encoding
             data_page_header.definition_level_encoding = parquet_thrift.Encoding.RLE
             data_page_header.repetition_level_encoding = parquet_thrift.Encoding.RLE
@@ -250,11 +265,14 @@ class NumparquetWriter:
             page_header.type = parquet_thrift.PageType.DATA_PAGE_V2
 
             data_page_header = parquet_thrift.DataPageHeaderV2()
+            # Number of non-null = num_values - num_nulls, which is the
+            # number of values in this data section.
             # num_values is the number of values, including NULLs.
-            data_page_header.num_values = len(sub_array)
+            data_page_header.num_values = int(sub_array.size)
             # num_rows is the number of rows in the data page.
-            data_page_header.num_rows = len(sub_array)
-            data_page_header.num_nulls = 0
+            # This is the number of *rows*.
+            data_page_header.num_rows = int(len(sub_array))
+            data_page_header.num_nulls = int(n_nulls)
             data_page_header.encoding = encoding
             data_page_header.repetition_levels_byte_length = 0
             data_page_header.definition_levels_byte_length = 0
@@ -265,34 +283,33 @@ class NumparquetWriter:
         #      There is no repeatability (yet).
 
         # 2. Store definitions in page_buffer.
+        if n_nulls > 0:
+            definitions = encode_rle_bitpacked(
+                (~sub_array.mask).astype(np.uint8),
+                1,
+            )
+        else:
+            definitions = encode_rle(1, len(sub_array), 1)
 
-        # TODO: support nulls etc.
-        count = len(sub_array)
-        header = count << 1
-        # width = 1
-        header_encoded = encode_uleb128(header)
-        # This is the compressing thing ... need to work on it.
-        temp = np.zeros(1, dtype=np.int32)
-        temp[0] = 1
-        rle = np.frombuffer(temp, dtype="S1")[0]
-        rle_length = np.array([len(header_encoded) + len(rle)], dtype=np.int32)
+        definition_length = np.array([len(definitions)], dtype=np.int32)
 
         if header_v2:
             # Write the length to the header, and put the definition
             # data in the prepend_buffer which will not be compressed.
-            data_page_header.definition_levels_byte_length = rle_length[0]
-            prepend_buffer.extend(header_encoded)
-            prepend_buffer.extend(rle)
+            data_page_header.definition_levels_byte_length = definition_length[0]
+            prepend_buffer.extend(definitions)
         else:
             # Write the length and the definition data to the page_buffer,
             # which will be compressed.
-            page_buffer.extend(rle_length)
-            page_buffer.extend(header_encoded)
-            page_buffer.extend(rle)
+            page_buffer.extend(definition_length)
+            page_buffer.extend(definitions)
 
         # 3. Store values in page_buffer.
-        #    TODO: make an encode thing here.
-        page_buffer.extend(encode_plain(sub_array))
+        #    TODO: Options for encoding other than plain.
+        if is_masked:
+            page_buffer.extend(encode_plain(sub_array.data[~sub_array.mask]))
+        else:
+            page_buffer.extend(encode_plain(sub_array))
 
         # 4. Record uncompressed size.
         page_header.uncompressed_page_size = len(page_buffer) + len(prepend_buffer)
@@ -327,10 +344,16 @@ class NumparquetWriter:
         """
         stats = parquet_thrift.Statistics()
 
-        stats.null_count = 0
-        stats.distict_count = len(array)
-        stats.min_value = encode_plain(np.asarray([np.nanmin(array)]))
-        stats.max_value = encode_plain(np.asarray([np.nanmax(array)]))
+        if isinstance(array, np.ma.MaskedArray):
+            stats.null_count = int(np.sum(array.mask))
+            uniq = np.unique(array.data[~array.mask])
+        else:
+            stats.null_count = 0
+            uniq = np.unique(array)
+
+        stats.distinct_count = int(len(uniq))
+        stats.min_value = encode_plain(np.asarray([np.nanmin(uniq)]))
+        stats.max_value = encode_plain(np.asarray([np.nanmax(uniq)]))
         stats.is_min_value_exact = True
         stats.is_max_value_exact = True
 
