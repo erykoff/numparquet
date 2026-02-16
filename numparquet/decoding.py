@@ -141,13 +141,13 @@ def decode_rle(npbuffer, header, bit_width):
         value = np.uint8(data[0] & 1)
     else:
         if byte_width == 1:
-            dtype = ">u1"
+            dtype = "<u1"
         elif byte_width == 2:
-            dtype = ">u2"
+            dtype = "<u2"
         elif byte_width <= 4:
-            dtype = ">u4"
+            dtype = "<u4"
         else:
-            dtype = ">u8"
+            dtype = "<u8"
 
         value_buffer = np.frombuffer(data.data, dtype=dtype)
         value = value_buffer[0]
@@ -227,7 +227,7 @@ def decode_rle_bit_packed_hybrid(npbuffer, width, values, length):
 
             values[n_read: n_read + stop_index] = bitpacked_values[0: stop_index]
 
-            n_read += len(bitpacked_values)
+            n_read += stop_index
 
     return n_read
 
@@ -343,6 +343,7 @@ def decode_data(
             if length is None:
                 length = npbuffer.read(1, np.int32)[0]
 
+        # TODO: This values type is WRONG.
         values = np.zeros(num_values, dtype=np.int32)
         decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, length)
 
