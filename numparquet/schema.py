@@ -146,13 +146,13 @@ class NumparquetSchemaElement:
         for element in schema_elements:
             if element.repetition_type == parquet_thrift.FieldRepetitionType.REPEATED:
                 self._max_repetition_level += 1
-        self._repetition_level_bit_width = int(np.ceil(np.log2(self._max_repetition_level + 1)))
+        self._repetition_level_bit_width = compute_bit_width(self._max_repetition_level)
 
         self._max_definition_level = 0
         for element in schema_elements:
             if element.repetition_type != parquet_thrift.FieldRepetitionType.REQUIRED:
                 self._max_definition_level += 1
-        self._definition_level_bit_width = int(np.ceil(np.log2(self._max_definition_level + 1)))
+        self._definition_level_bit_width = compute_bit_width(self._max_definition_level)
 
     @property
     def name(self):
@@ -388,3 +388,19 @@ def parquet_schema_from_numpy_dict(data):
         schema_elements.append(element)
 
     return schema_elements
+
+
+def compute_bit_width(max_value):
+    """Compute the bit width from the max value.
+
+    Parameters
+    ----------
+    max_value : `int`
+        Maximum value.
+
+    Returns
+    -------
+    bit_width : `int`
+        Bit width to contain those values.
+    """
+    return int(np.ceil(np.log2(max_value + 1)))
