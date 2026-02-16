@@ -11,7 +11,6 @@ from numparquet.decoding import (
     _decode_bitpacked,
     decode_rle,
     NumpyBuffer,
-    decode_uleb128,
 )
 from numparquet.schema import compute_bit_width
 
