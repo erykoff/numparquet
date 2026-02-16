@@ -9,7 +9,6 @@ from numparquet.encoding import (
 from numparquet.decoding import (
     decode_rle_bit_packed_hybrid,
     _decode_bitpacked,
-    decode_rle,
     NumpyBuffer,
 )
 from numparquet.schema import compute_bit_width
