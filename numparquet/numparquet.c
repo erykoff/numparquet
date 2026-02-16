@@ -102,7 +102,7 @@ static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
 
     uint32_t current_byte = 0;
     uint64_t data = (uint64_t) raw_bytes_data[0];
-    uint64_t mask = (1 << bit_width) - 1;
+    uint64_t mask = ((uint64_t) 1 << (uint64_t) bit_width) - (uint64_t) 1;
     int64_t bits_wnd_l = 8;
     int64_t bits_wnd_r = 0;
     uint64_t total = (uint64_t) raw_bytes_size * 8;
@@ -113,7 +113,7 @@ static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwa
             bits_wnd_r -= 8;
             bits_wnd_l -= 8;
             data >>= 8;
-        } else if ((bits_wnd_l - bits_wnd_r) >= bit_width) {
+        } else if ((bits_wnd_l - bits_wnd_r) >= (uint64_t) bit_width) {
             if (bit_width <= 8) {
                 ((uint8_t *)value_data)[index] = (uint8_t) ((data >> bits_wnd_r) & mask);
             } else if (bit_width <= 16) {
@@ -215,7 +215,7 @@ static int bitpack_values_internal(void *values, size_t n_values, size_t value_w
             v = (uint64_t) ((uint8_t *) values)[i];
         } else if (value_width == 2) {
             v = (uint64_t) ((uint16_t *) values)[i];
-        } else if (value_width == 32) {
+        } else if (value_width == 4) {
             v = (uint64_t) ((uint32_t *) values)[i];
         } else {
             v = ((uint64_t *) values)[i];
@@ -554,7 +554,7 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
             v = (uint64_t) ((uint8_t *) values_buffer)[i];
         } else if (packer.value_width == 2) {
             v = (uint64_t) ((uint16_t *) values_buffer)[i];
-        } else if (packer.value_width == 32) {
+        } else if (packer.value_width == 4) {
             v = (uint64_t) ((uint32_t *) values_buffer)[i];
         } else {
             v = ((uint64_t *) values_buffer)[i];
