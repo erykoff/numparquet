@@ -631,7 +631,7 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
 
 
 PyDoc_STRVAR(encode_rle_doc,
-             "encode_rle(value, count)\n"
+             "encode_rle(value, count, bit_width)\n"
              "--\n\n"
              "Encode a value count times with run-length-encoding and header.\n"
              "\n"
