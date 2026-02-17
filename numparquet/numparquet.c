@@ -29,8 +29,8 @@
 #define ERR_SIZE 256
 
 
-PyDoc_STRVAR(decode_bitpacked_doc,
-             "decode_bitpacked(raw_bytes, bit_width, count, boolean=False)\n"
+PyDoc_STRVAR(decode_bitpacked_array_doc,
+             "decode_bitpacked_array(raw_bytes, bit_width, count, boolean=False)\n"
              "--\n\n"
              "Read a bitpacked array.\n"
              "\n"
@@ -52,7 +52,7 @@ PyDoc_STRVAR(decode_bitpacked_doc,
              "    will be boolean if ``boolean`` is True and bit_width is 1."
              );
 
-static PyObject *decode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwargs) {
+static PyObject *decode_bitpacked_array(PyObject *dummy, PyObject *args, PyObject *kwargs) {
     PyObject *raw_bytes_obj = NULL;
     PyObject *raw_bytes_arr = NULL, *value_arr = NULL;
 
@@ -255,10 +255,10 @@ static int bitpack_values_internal(void *values, size_t n_values, size_t value_w
 }
 
 
-PyDoc_STRVAR(encode_bitpacked_doc,
-             "encode_bitpacked(values, bit_width)\n"
+PyDoc_STRVAR(encode_bitpacked_array_doc,
+             "encode_bitpacked_array(values, bit_width)\n"
              "--\n\n"
-             "Bitpack values (up to 64 bits).\n"
+             "Bitpack array of values (up to 64 bits).\n"
              "\n"
              "Parameters\n"
              "----------\n"
@@ -277,7 +277,7 @@ PyDoc_STRVAR(encode_bitpacked_doc,
   Code adapted from arrow, arrow/cpp/src/arrow/util/rle_encoding_internal.h
   and arrow/cpp/src/arrow/util/bit_stream_utils_internal.h
  */
-static PyObject *encode_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwargs) {
+static PyObject *encode_bitpacked_array(PyObject *dummy, PyObject *args, PyObject *kwargs) {
     PyObject *values_obj = NULL;
     PyObject *values_arr = NULL, *output_arr = NULL;
     PyObject *slice = NULL, *retval = NULL;
@@ -475,10 +475,10 @@ static int store_buffered_values_internal(numparquet_rle_packer *packer, bool do
 }
 
 
-PyDoc_STRVAR(encode_rle_bitpacked_doc,
-             "encode_rle_bitpacked(values, bit_width)\n"
+PyDoc_STRVAR(encode_rle_bitpacked_array_doc,
+             "encode_rle_bitpacked_array(values, bit_width)\n"
              "--\n\n"
-             "Bitpack values (up to 64 bits).\n"
+             "Encode array of values with RLE/bitpacked hybrid (up to 64 bits).\n"
              "\n"
              "Parameters\n"
              "----------\n"
@@ -489,15 +489,15 @@ PyDoc_STRVAR(encode_rle_bitpacked_doc,
              "\n"
              "Returns\n"
              "-------\n"
-             "rle_bit_packed_array : `np.ndarray`\n"
-             "    Bit-packed array, of type np.uint8."
+             "rle_bitpacked_array : `np.ndarray`\n"
+             "    RLE/bit-packed array, of type np.uint8."
              );
 
 /*
   Code adapted from arrow, arrow/cpp/src/arrow/util/rle_encoding_internal.h
   and arrow/cpp/src/arrow/util/bit_stream_utils_internal.h
  */
-static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject *kwargs) {
+static PyObject *encode_rle_bitpacked_array(PyObject *dummy, PyObject *args, PyObject *kwargs) {
     PyObject *values_obj = NULL;
     PyObject *values_arr = NULL, *output_arr = NULL;
     PyObject *slice = NULL, *retval = NULL;
@@ -630,8 +630,8 @@ static PyObject *encode_rle_bitpacked(PyObject *dummy, PyObject *args, PyObject 
 }
 
 
-PyDoc_STRVAR(encode_rle_doc,
-             "encode_rle(value, count, bit_width)\n"
+PyDoc_STRVAR(encode_rle_array_doc,
+             "encode_rle_array(value, count, bit_width)\n"
              "--\n\n"
              "Encode a value count times with run-length-encoding and header.\n"
              "\n"
@@ -650,7 +650,7 @@ PyDoc_STRVAR(encode_rle_doc,
              "    RLE array, of type np.uint8."
              );
 
-static PyObject *encode_rle(PyObject *dummy, PyObject *args, PyObject *kwargs) {
+static PyObject *encode_rle_array(PyObject *dummy, PyObject *args, PyObject *kwargs) {
     PyObject *output_arr = NULL, *retval = NULL;
     PyObject *slice = NULL;
 
@@ -707,14 +707,14 @@ static PyObject *encode_rle(PyObject *dummy, PyObject *args, PyObject *kwargs) {
 
 
 static PyMethodDef numparquet_methods[] = {
-    {"_decode_bitpacked", (PyCFunction)(void (*)(void))decode_bitpacked,
-     METH_VARARGS | METH_KEYWORDS, decode_bitpacked_doc},
-    {"encode_bitpacked", (PyCFunction)(void (*)(void))encode_bitpacked,
-     METH_VARARGS | METH_KEYWORDS, encode_bitpacked_doc},
-    {"encode_rle_bitpacked", (PyCFunction)(void (*)(void))encode_rle_bitpacked,
-     METH_VARARGS | METH_KEYWORDS, encode_rle_bitpacked_doc},
-    {"encode_rle", (PyCFunction)(void (*)(void))encode_rle,
-     METH_VARARGS | METH_KEYWORDS, encode_rle_doc},
+    {"decode_bitpacked_array", (PyCFunction)(void (*)(void))decode_bitpacked_array,
+     METH_VARARGS | METH_KEYWORDS, decode_bitpacked_array_doc},
+    {"encode_bitpacked_array", (PyCFunction)(void (*)(void))encode_bitpacked_array,
+     METH_VARARGS | METH_KEYWORDS, encode_bitpacked_array_doc},
+    {"encode_rle_bitpacked_array", (PyCFunction)(void (*)(void))encode_rle_bitpacked_array,
+     METH_VARARGS | METH_KEYWORDS, encode_rle_bitpacked_array_doc},
+    {"encode_rle_array", (PyCFunction)(void (*)(void))encode_rle_array,
+     METH_VARARGS | METH_KEYWORDS, encode_rle_array_doc},
     {NULL, NULL, 0, NULL}};
 
 static struct PyModuleDef numparquet_module = {PyModuleDef_HEAD_INIT, "_numparquet", NULL, -1,

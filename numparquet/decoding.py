@@ -1,7 +1,7 @@
 import numpy as np
 
 from .thrift import parquet_thrift
-from ._numparquet import _decode_bitpacked
+from ._numparquet import decode_bitpacked_array
 
 
 class NumpyBuffer:
@@ -82,7 +82,7 @@ class NumpyBuffer:
         return self._size - self._index
 
 
-def decode_uleb128(npbuffer):
+def decode_uleb128_buffer(npbuffer):
     """Decode an unsigned int from LEB128 encoding.
 
     See https://en.wikipedia.org/wiki/LEB128
@@ -110,7 +110,7 @@ def decode_uleb128(npbuffer):
     return result
 
 
-def decode_rle(npbuffer, header, bit_width):
+def decode_rle_buffer(npbuffer, header, bit_width):
     """Decode from a buffer a run-length-encoding.
 
     Parameters
@@ -155,7 +155,7 @@ def decode_rle(npbuffer, header, bit_width):
     return count, value
 
 
-def decode_bitpacked(npbuffer, header, width, boolean=False):
+def decode_bitpacked_buffer(npbuffer, header, width, boolean=False):
     """Decode from a buffer a set of bit-packed values.
 
     Parameters
@@ -185,10 +185,10 @@ def decode_bitpacked(npbuffer, header, width, boolean=False):
 
     raw_bytes = npbuffer.read(byte_count, dtype=np.uint8)
 
-    return _decode_bitpacked(raw_bytes, width, count, boolean=boolean)
+    return decode_bitpacked_array(raw_bytes, width, count, boolean=boolean)
 
 
-def decode_rle_bit_packed_hybrid(npbuffer, width, values, length):
+def decode_rle_bitpacked_buffer(npbuffer, width, values, length):
     """Decode RLE/Bit-Packed Hybrid.
 
     Parameters
@@ -214,13 +214,13 @@ def decode_rle_bit_packed_hybrid(npbuffer, width, values, length):
     n_read = 0
     start_index = npbuffer.index
     while npbuffer.index < (start_index + length):
-        header = decode_uleb128(npbuffer)
+        header = decode_uleb128_buffer(npbuffer)
         if header & 1 == 0:
-            count, value = decode_rle(npbuffer, header, width)
+            count, value = decode_rle_buffer(npbuffer, header, width)
             values[n_read: n_read + count] = value
             n_read += count
         else:
-            bitpacked_values = decode_bitpacked(npbuffer, header, width)
+            bitpacked_values = decode_bitpacked_buffer(npbuffer, header, width)
             stop_index = len(bitpacked_values)
             if (n_read + stop_index) > len(values):
                 stop_index = len(values) - int(n_read)
@@ -232,7 +232,7 @@ def decode_rle_bit_packed_hybrid(npbuffer, width, values, length):
     return n_read
 
 
-def decode_byte_stream_split(npbuffer, count, dtype):
+def decode_byte_stream_split_buffer(npbuffer, count, dtype):
     """Decode byte stream split data.
 
     This encoding creates K byte-streams of length N where K is the size in
@@ -273,7 +273,7 @@ def decode_byte_stream_split(npbuffer, count, dtype):
     return values
 
 
-def decode_data(
+def decode_buffer(
     npbuffer,
     encoding,
     num_values,
@@ -326,7 +326,7 @@ def decode_data(
         elif schema_element.dtype == np.bool_:
             # PLAIN encoding for Boolean uses bit-packed.
             count = npbuffer.remaining
-            values = decode_bitpacked(npbuffer, count << 1, 1, boolean=True)[0: num_values]
+            values = decode_bitpacked_buffer(npbuffer, count << 1, 1, boolean=True)[0: num_values]
         else:
             # This is a direct translation, and reuses the buffer.
             values = npbuffer.read(count=num_values, dtype=schema_element.native_dtype)
@@ -345,10 +345,10 @@ def decode_data(
 
         # TODO: This values type is WRONG.
         values = np.zeros(num_values, dtype=np.int32)
-        decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, length)
+        decode_rle_bitpacked_buffer(npbuffer, bit_width, values, length)
 
     elif encoding == parquet_thrift.Encoding.BYTE_STREAM_SPLIT:
-        values = decode_byte_stream_split(npbuffer, num_values, schema_element.native_dtype)
+        values = decode_byte_stream_split_buffer(npbuffer, num_values, schema_element.native_dtype)
     else:
         raise NotImplementedError(f"Encoding {encoding} not supported.")
 

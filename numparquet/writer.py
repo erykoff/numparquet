@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 from .thrift import parquet_thrift, write_marker, write_file_metadata
-from .encoding import encode_rle_bitpacked, encode_plain, encode_rle
+from .encoding import encode_rle_bitpacked_array, encode_plain, encode_rle_array
 from .compression import compress, compression_string_map
 from .schema import NumparquetSchema, parquet_schema_from_numpy_dict
 from thriftpy2.utils import serialize
@@ -281,12 +281,12 @@ class NumparquetWriter:
 
         # 2. Store definitions in page_buffer.
         if n_nulls > 0:
-            definitions = encode_rle_bitpacked(
+            definitions = encode_rle_bitpacked_array(
                 (~sub_array.mask).astype(np.uint8),
                 1,
             )
         else:
-            definitions = encode_rle(1, len(sub_array), 1)
+            definitions = encode_rle_array(1, len(sub_array), 1)
 
         definition_length = np.array([len(definitions)], dtype=np.int32)
 

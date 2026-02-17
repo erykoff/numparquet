@@ -1,36 +1,4 @@
-import numpy as np
-from ._numparquet import encode_bitpacked, encode_rle, encode_rle_bitpacked  # noqa: F401
-
-
-def encode_uleb128(value):
-    """Encode an unsigned int using LEB128 encoding.
-
-    See https://en.wikipedia.org/wiki/LEB128
-
-    Parameters
-    ----------
-    value : `np.uint64`
-        Raw value.
-
-    Returns
-    -------
-    byte_array : `np.ndarray`
-        ULEB128 encoded value.
-    """
-    byte_arr = np.zeros(100, dtype=np.uint8)
-    index = 0
-    value = np.uint64(value)
-    while True:
-        byte = value & 0x7F
-        value >>= 7
-        if value != 0:
-            byte |= 0x80
-        byte_arr[index] = np.uint8(byte)
-        index += 1
-        if value == 0:
-            break
-
-    return byte_arr[0: index]
+from ._numparquet import encode_bitpacked_array, encode_rle_array, encode_rle_bitpacked_array  # noqa: F401
 
 
 def encode_plain(array):
@@ -46,5 +14,4 @@ def encode_plain(array):
     """
     # Need to check about native vs converted types!  Maybe.
     # And boolean special.
-    # return np.frombuffer(array, dtype=np.uint8)
     return bytearray(array.data)

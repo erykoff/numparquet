@@ -3,7 +3,7 @@ import numpy as np
 from .thrift import check_valid_parquet, read_md_length, read_file_metadata, read_page_header, parquet_thrift
 from .schema import NumparquetSchema
 from .compression import decompress_into
-from .decoding import NumpyBuffer, decode_data
+from .decoding import NumpyBuffer, decode_buffer
 from .utilities import (
     make_empty_column,
     update_byte_array_column,
@@ -102,7 +102,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
 
                         dict_npbuffer = NumpyBuffer(dict_value_buffer)
 
-                        dict_values, _ = decode_data(
+                        dict_values, _ = decode_buffer(
                             dict_npbuffer,
                             translate_encoding(schema, True, page_header.dictionary_page_header.encoding),
                             page_header.dictionary_page_header.num_values,
@@ -165,7 +165,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
 
                     # 1. Repetition levels data.
                     if schema[name].max_repetition_level > 0:
-                        repetition_values, _ = decode_data(
+                        repetition_values, _ = decode_buffer(
                             npbuffer,
                             repetition_level_encoding,
                             num_values_in_page,
@@ -183,7 +183,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
                     # 2. Definition levels data.  Only for optional columns.
                     #    This tells which are NULL.
                     if schema[name].nullable:
-                        definition_values, _ = decode_data(
+                        definition_values, _ = decode_buffer(
                             npbuffer,
                             definition_level_encoding,
                             num_values_in_page,
@@ -203,7 +203,7 @@ def read_numparquet(filename_or_handle, columns=None, fs=None, return_schema=Fal
 
                     null_count = num_values_in_page - data_value_count
 
-                    data_values, use_dictionary_data = decode_data(
+                    data_values, use_dictionary_data = decode_buffer(
                         npbuffer,
                         translate_encoding(schema, False, encoding),
                         data_value_count,

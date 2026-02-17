@@ -2,13 +2,13 @@ import numpy as np
 import pytest
 
 from numparquet.encoding import (
-    encode_bitpacked,
-    encode_rle,
-    encode_rle_bitpacked,
+    encode_bitpacked_array,
+    encode_rle_array,
+    encode_rle_bitpacked_array,
 )
 from numparquet.decoding import (
-    decode_rle_bit_packed_hybrid,
-    _decode_bitpacked,
+    decode_rle_bitpacked_buffer,
+    decode_bitpacked_array,
     NumpyBuffer,
 )
 from numparquet.schema import compute_bit_width
@@ -19,8 +19,8 @@ def test_encode_bitpacked_bool(length):
     np.random.seed(12345)
 
     arr = np.random.choice(2, size=length).astype(np.bool_)
-    packed = encode_bitpacked(arr, 1)
-    unpacked = _decode_bitpacked(packed, 1, len(arr), boolean=True)
+    packed = encode_bitpacked_array(arr, 1)
+    unpacked = decode_bitpacked_array(packed, 1, len(arr), boolean=True)
 
     assert np.all(arr == unpacked)
 
@@ -39,8 +39,8 @@ def test_encode_bitpacked(length, width):
     elif width <= 32:
         arr = arr.astype(np.uint32)
 
-    packed = encode_bitpacked(arr, width)
-    unpacked = _decode_bitpacked(packed, width, len(arr))
+    packed = encode_bitpacked_array(arr, width)
+    unpacked = decode_bitpacked_array(packed, width, len(arr))
 
     assert np.all(arr == unpacked)
 
@@ -50,11 +50,11 @@ def test_encode_bitpacked(length, width):
 def test_encode_rle(length, value):
     bit_width = compute_bit_width(value)
 
-    packed = encode_rle(value, length, bit_width)
+    packed = encode_rle_array(value, length, bit_width)
 
     npbuffer = NumpyBuffer(packed)
     values = np.zeros(length * 2, dtype=np.uint64)
-    retval = decode_rle_bit_packed_hybrid(npbuffer, bit_width, values, npbuffer.remaining)
+    retval = decode_rle_bitpacked_buffer(npbuffer, bit_width, values, npbuffer.remaining)
 
     assert retval == length
     np.testing.assert_array_equal(values[0: length], value)
@@ -79,10 +79,10 @@ def test_encode_rle_bitpacked(length, width):
         arr[500: 700] = 1
         arr[1000: 1200] = 0
 
-    packed = encode_rle_bitpacked(arr, width)
+    packed = encode_rle_bitpacked_array(arr, width)
 
     npbuffer = NumpyBuffer(packed)
     unpacked = np.zeros_like(arr)
-    retval = decode_rle_bit_packed_hybrid(npbuffer, width, unpacked, len(packed))
+    retval = decode_rle_bitpacked_buffer(npbuffer, width, unpacked, len(packed))
     assert retval == len(unpacked)
     assert np.all(arr == unpacked)
