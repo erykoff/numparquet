@@ -32,7 +32,7 @@ def arrow_table_to_numpy_dict(arrow_table):
         else:
             if t in (pa.float64(), pa.float32(), pa.float16()):
                 null_value = np.nan
-            elif t in (p.int64(), pa.int32(), pa.int16(), pa.int8()):
+            elif t in (pa.int64(), pa.int32(), pa.int16(), pa.int8()):
                 null_value = -1
             elif t in (pa.bool_(),):
                 null_value = True
@@ -66,7 +66,7 @@ def arrow_table_to_numpy_dict(arrow_table):
 def read_simple_pyarrow_parquet(fname):
     """
     """
-    arrow_table = pq.read_table(fname)
+    arrow_table = pq.read_table(fname, use_threads=False)
 
     numpy_dict, metadata = arrow_table_to_numpy_dict(arrow_table)
 
