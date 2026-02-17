@@ -12,7 +12,8 @@ from thriftpy2.protocol.compact import TCompactProtocolFactory
 PARQUET_MARKER = b"PAR1"
 
 # TODO:
-#  * nulls
+#  * refactor names for unpacking and stuff.
+#  * boolean writing
 #  * byte split encoding
 #  * dictionary encoding
 #  * auto encoding
@@ -193,11 +194,8 @@ class NumparquetWriter:
         # TODO: figure out for lists
         column_metadata.path_in_schema = schema_element.path_in_schema
         column_metadata.codec = self._codec
-        # TODO: accumulate from the data pages.
-        if isinstance(array, np.ma.MaskedArray):
-            column_metadata.num_values = int(np.sum(~array.mask))
-        else:
-            column_metadata.num_values = int(len(array))
+        # TODO: what should this be for lists
+        column_metadata.num_values = len(array)
         column_metadata.data_page_offset = self._file_buffer.tell()
         # TODO: Add support for dictionary.
         column_metadata.dictionary_page_offset = None
@@ -239,7 +237,7 @@ class NumparquetWriter:
         if isinstance(sub_array, np.ma.MaskedArray):
             is_masked = True
 
-            n_nulls = np.sum(sub_array.mask)
+            n_nulls = int(np.sum(sub_array.mask))
             n_non_nulls -= n_nulls
 
         # The prepend buffer is for data_page_version == 2, where some data
@@ -255,7 +253,8 @@ class NumparquetWriter:
             page_header.type = parquet_thrift.PageType.DATA_PAGE
 
             data_page_header = parquet_thrift.DataPageHeader()
-            data_page_header.num_values = int(sub_array.size)
+            # TODO: get this correct for lists.
+            data_page_header.num_values = len(sub_array)
             data_page_header.encoding = encoding
             data_page_header.definition_level_encoding = parquet_thrift.Encoding.RLE
             data_page_header.repetition_level_encoding = parquet_thrift.Encoding.RLE
@@ -265,14 +264,12 @@ class NumparquetWriter:
             page_header.type = parquet_thrift.PageType.DATA_PAGE_V2
 
             data_page_header = parquet_thrift.DataPageHeaderV2()
-            # Number of non-null = num_values - num_nulls, which is the
-            # number of values in this data section.
             # num_values is the number of values, including NULLs.
-            data_page_header.num_values = int(sub_array.size)
+            # TODO: Get this correct for lists
+            data_page_header.num_values = len(sub_array)
             # num_rows is the number of rows in the data page.
-            # This is the number of *rows*.
-            data_page_header.num_rows = int(len(sub_array))
-            data_page_header.num_nulls = int(n_nulls)
+            data_page_header.num_rows = len(sub_array)
+            data_page_header.num_nulls = n_nulls
             data_page_header.encoding = encoding
             data_page_header.repetition_levels_byte_length = 0
             data_page_header.definition_levels_byte_length = 0
