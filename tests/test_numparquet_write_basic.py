@@ -9,7 +9,7 @@ except ImportError:
 import numparquet
 
 
-@pytest.mark.parametrize("dtype", [np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("dtype", [np.bool_, np.int32, np.int64, np.float32, np.float64])
 @pytest.mark.parametrize("data_page_version", [1, 2])
 @pytest.mark.skipif(read_simple_pyarrow_parquet is None, reason="pyarrow not installed")
 def test_basic_dtypes_small_few(
@@ -59,7 +59,7 @@ def test_basic_dtypes_small_many(
     np.testing.assert_array_equal(new_data["a"], data["a"])
 
 
-@pytest.mark.parametrize("dtype", [np.int32, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("dtype", [np.bool_, np.int32, np.int64, np.float32, np.float64])
 @pytest.mark.parametrize("data_page_version", [1, 2])
 @pytest.mark.skipif(read_simple_pyarrow_parquet is None, reason="pyarrow not installed")
 def test_basic_dtypes_large_few(
